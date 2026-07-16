@@ -1,0 +1,11 @@
+--- DUNGEON GENERATION LOG ---
+Last 1 runs (max 50)
+--------------------------------
+
+Run #1 | Seed: 833373 | Rooms: 7 | Floor Tiles: 2908 | Time: 947μs | Connected: True
+
+--- SUMMARY ---
+Rooms       — Min: 7 | Max: 7 | Avg: 7.0
+Floor Tiles — Min: 2908 | Max: 2908 | Avg: 2908.0
+Time (μs)   — Min: 947 | Max: 947 | Avg: 947.0
+Connectivity — 1/1 runs fully connected (100.0%)
