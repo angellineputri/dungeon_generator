@@ -19,9 +19,12 @@ public class DungeonGenerator : MonoBehaviour
     [Header("CA Settings")]
     public int caIterations = 3;
 
-    [Header("Tilemaps - assign all three in Inspector")]
+    [Header("Tilemaps - assign only what you need")]
+    [Tooltip("Leave empty in gameplay builds. Assign for report/debug screenshots of each pipeline stage.")]
     public Tilemap tilemapBSP;
+    [Tooltip("Leave empty in gameplay builds. Assign for report/debug screenshots of each pipeline stage.")]
     public Tilemap tilemapRW;
+    [Tooltip("Always assign this one — it's the final playable layout that IsWalkable(), EnemyAI, and PlayerController read from.")]
     public Tilemap tilemapCA;
     public TileBase floorTile;
     public TileBase wallTile;
@@ -29,15 +32,41 @@ public class DungeonGenerator : MonoBehaviour
     [Header("UI")]
     public TextMeshProUGUI metricsText;
 
+    // Fired after a floor finishes generating and rendering, so systems like
+    // EnemySpawner can react without DungeonGenerator needing to know about them.
+    public System.Action OnFloorGenerated;
+
     private int[,] grid;
     private List<RectInt> rooms = new List<RectInt>();
     private int currentSeed;
+    private int currentFloor = 0;
+    private RectInt playerSpawnRoom;
+    private RectInt exitRoom;
 
-    // --- Public accessors for EnemyAI / Pathfinding ---
+    // --- Public accessors for EnemyAI / Pathfinding / EnemySpawner ---
     public int[,] Grid => grid;
     public int GridWidth => gridWidth;
     public int GridHeight => gridHeight;
     public List<RectInt> Rooms => rooms;
+    public int CurrentFloor => currentFloor;
+
+    // The room the player spawns in — always the smallest room on the floor, treated
+    // as a safe starting room. Computed once per Generate() call so PlayerController
+    // and EnemySpawner both read the exact same room without needing to coordinate
+    // with each other (they may subscribe to OnFloorGenerated in either order).
+    public RectInt PlayerSpawnRoom => playerSpawnRoom;
+
+    // The floor's goal room — the room with the greatest actual walking distance
+    // (BFS over the walkable grid, not straight-line) from the player's spawn room.
+    // Reaching it advances to the next floor.
+    public RectInt ExitRoom => exitRoom;
+
+    // Re-runs the same generation Space already triggers, but callable from other
+    // scripts (e.g. PlayerController when the player reaches ExitRoom).
+    public void AdvanceToNextFloor()
+    {
+        Generate();
+    }
 
     public bool IsWalkable(int x, int y)
     {
@@ -75,6 +104,13 @@ public class DungeonGenerator : MonoBehaviour
 
     void Generate()
     {
+        // Difficulty scaling: pull this floor's parameters before generating anything,
+        // so BSP/CA use the right minRoomSize/caIterations for the floor about to be built.
+        int nextFloor = currentFloor + 1;
+        DifficultyParams diff = DifficultyManager.GetDifficultyParams(nextFloor);
+        minRoomSize = diff.minRoomSize;
+        caIterations = diff.caIterations;
+
         int attempts = 0;
         BSPNode root = null;
 
@@ -105,6 +141,15 @@ public class DungeonGenerator : MonoBehaviour
         }
         while (rooms.Count < 6 || rooms.Count > 10);
 
+        // Player always spawns in the smallest room on the floor — computed here, once,
+        // so PlayerController and EnemySpawner both read the same room via PlayerSpawnRoom
+        // regardless of which order they handle OnFloorGenerated in.
+        RectInt smallest = rooms[0];
+        foreach (var r in rooms)
+            if (r.width * r.height < smallest.width * smallest.height)
+                smallest = r;
+        playerSpawnRoom = smallest;
+
         // stage 1 - BSP only
         int[,] gridBSP = CopyGrid(grid);
 
@@ -118,12 +163,16 @@ public class DungeonGenerator : MonoBehaviour
 
         sw.Stop();
 
-        // render all 3 tilemaps
+        // Render each stage only if its tilemap is assigned in the Inspector.
+        // Gameplay builds: assign only tilemapCA, leave tilemapBSP/tilemapRW empty.
+        // Report/debug screenshots: assign all 3 to see each pipeline stage.
         Tilemap[] tilemaps = { tilemapBSP, tilemapRW, tilemapCA };
         int[][,] grids = { gridBSP, gridRW, gridCA };
 
         for (int i = 0; i < 3; i++)
         {
+            if (tilemaps[i] == null) continue;
+
             tilemaps[i].ClearAllTiles();
             for (int x = 0; x < gridWidth; x++)
                 for (int y = 0; y < gridHeight; y++)
@@ -141,6 +190,12 @@ public class DungeonGenerator : MonoBehaviour
 
         bool connected = CheckConnectivity();
         runCounter++;
+        currentFloor = nextFloor;
+
+        // Exit room: whichever room is farthest by actual walkable-path distance from
+        // the player's spawn room, found via BFS over the final grid (same technique
+        // as CheckConnectivity, just tracking distance instead of a visited flag).
+        exitRoom = FindFarthestRoom(playerSpawnRoom);
 
         GenerationLog entry = new GenerationLog
         {
@@ -157,13 +212,19 @@ public class DungeonGenerator : MonoBehaviour
 
         WriteLog();
 
-        metricsText.text =
-            $"Seed: {currentSeed}\n" +
-            $"Generation Time: {sw.ElapsedTicks * 1000000L / Stopwatch.Frequency}μs\n" +
-            $"Rooms: {rooms.Count}\n" +
-            $"Floor Tiles: {floorCount}\n" +
-            $"All Connected: {connected}\n" +
-            $"Total Runs Logged: {logs.Count}";
+        if (metricsText != null)
+        {
+            metricsText.text =
+                $"Floor: {currentFloor}\n" +
+                $"Seed: {currentSeed}\n" +
+                $"Generation Time: {sw.ElapsedTicks * 1000000L / Stopwatch.Frequency}μs\n" +
+                $"Rooms: {rooms.Count}\n" +
+                $"Floor Tiles: {floorCount}\n" +
+                $"All Connected: {connected}\n" +
+                $"Total Runs Logged: {logs.Count}";
+        }
+
+        OnFloorGenerated?.Invoke();
     }
 
     int[,] CopyGrid(int[,] source)
@@ -182,7 +243,7 @@ public class DungeonGenerator : MonoBehaviour
             writer.WriteLine("--- DUNGEON GENERATION LOG ---");
             writer.WriteLine($"Last {logs.Count} runs (max 50)");
             writer.WriteLine("--------------------------------\n");
-            
+
 
             foreach (var log in logs)
             {
@@ -276,9 +337,9 @@ public class DungeonGenerator : MonoBehaviour
         }
         else
         {
-            if (node.left != null) 
+            if (node.left != null)
                 CarveRooms(node.left);
-            if (node.right != null) 
+            if (node.right != null)
                 CarveRooms(node.right);
         }
     }
@@ -445,6 +506,65 @@ public class DungeonGenerator : MonoBehaviour
                     return false;
 
         return true;
+    }
+
+    // BFS distance flood-fill from the centre of startRoom, then returns whichever
+    // room's centre has the largest distance. Same traversal pattern as
+    // CheckConnectivity, but records a distance per tile instead of just visited/not.
+    RectInt FindFarthestRoom(RectInt startRoom)
+    {
+        Vector2Int start = new Vector2Int(
+            Mathf.Clamp(startRoom.x + startRoom.width / 2, 0, gridWidth - 1),
+            Mathf.Clamp(startRoom.y + startRoom.height / 2, 0, gridHeight - 1)
+        );
+
+        int[,] dist = new int[gridWidth, gridHeight];
+        for (int x = 0; x < gridWidth; x++)
+            for (int y = 0; y < gridHeight; y++)
+                dist[x, y] = -1;
+
+        Queue<Vector2Int> queue = new Queue<Vector2Int>();
+        dist[start.x, start.y] = 0;
+        queue.Enqueue(start);
+
+        int[] dx = { 0, 0, 1, -1 };
+        int[] dy = { 1, -1, 0, 0 };
+
+        while (queue.Count > 0)
+        {
+            Vector2Int curr = queue.Dequeue();
+            for (int i = 0; i < 4; i++)
+            {
+                int nx = curr.x + dx[i];
+                int ny = curr.y + dy[i];
+                if (nx >= 0 && nx < gridWidth && ny >= 0 && ny < gridHeight
+                    && grid[nx, ny] == 0 && dist[nx, ny] == -1)
+                {
+                    dist[nx, ny] = dist[curr.x, curr.y] + 1;
+                    queue.Enqueue(new Vector2Int(nx, ny));
+                }
+            }
+        }
+
+        RectInt farthest = startRoom;
+        int farthestDist = -1;
+        foreach (var room in rooms)
+        {
+            if (room.x == startRoom.x && room.y == startRoom.y
+                && room.width == startRoom.width && room.height == startRoom.height)
+                continue; // skip the spawn room itself
+
+            int cx = Mathf.Clamp(room.x + room.width / 2, 0, gridWidth - 1);
+            int cy = Mathf.Clamp(room.y + room.height / 2, 0, gridHeight - 1);
+            int d = dist[cx, cy];
+            if (d > farthestDist)
+            {
+                farthestDist = d;
+                farthest = room;
+            }
+        }
+
+        return farthest;
     }
 }
 

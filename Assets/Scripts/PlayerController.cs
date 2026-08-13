@@ -11,19 +11,52 @@ public class PlayerController : MonoBehaviour
     public float moveSpeed = 5f;
     public float collisionRadius = 0.3f;
 
-    void Start()
+    [Header("Exit Trigger")]
+    [Tooltip("How close (in tiles) the player must be to the exit marker's exact position to advance, rather than anywhere in the exit room.")]
+    public float exitTriggerRadius = 1f;
+
+    void OnEnable()
     {
-        StartCoroutine(SpawnAtValidPosition());
+        if (dungeon != null)
+            dungeon.OnFloorGenerated += RespawnAtValidPosition;
     }
 
-    IEnumerator SpawnAtValidPosition()
+    void OnDisable()
     {
-        // wait until DungeonGenerator has actually generated rooms
-        yield return null; // wait one frame
+        if (dungeon != null)
+            dungeon.OnFloorGenerated -= RespawnAtValidPosition;
+    }
+
+    void Start()
+    {
+        // Fallback for the very first floor, in case OnEnable subscribed after
+        // DungeonGenerator already finished its first Generate() call (shouldn't
+        // normally happen given Unity's Awake->OnEnable->Start ordering, but this
+        // keeps the player from getting stuck at the origin if it ever does).
+        if (dungeon != null && dungeon.CurrentFloor > 0)
+            RespawnAtValidPosition();
+        else
+            StartCoroutine(WaitForFirstFloor());
+    }
+
+    IEnumerator WaitForFirstFloor()
+    {
+        yield return null;
         while (dungeon.Rooms == null || dungeon.Rooms.Count == 0)
             yield return null;
+        RespawnAtValidPosition();
+    }
 
-        RectInt room = dungeon.Rooms[Random.Range(0, dungeon.Rooms.Count)];
+    // Called on the very first floor and again every time the dungeon regenerates
+    // (Space key), via DungeonGenerator.OnFloorGenerated. No need to wait/coroutine
+    // here since Rooms is already fully populated by the time this event fires.
+    void RespawnAtValidPosition()
+    {
+        if (dungeon.Rooms == null || dungeon.Rooms.Count == 0) return;
+
+        // Always the smallest room on the floor, decided once by DungeonGenerator
+        // so EnemySpawner excludes this exact room too.
+        RectInt room = dungeon.PlayerSpawnRoom;
         Vector2Int center = new Vector2Int(
             room.x + room.width / 2,
             room.y + room.height / 2
@@ -51,6 +84,23 @@ public class PlayerController : MonoBehaviour
         Vector3 nextY = transform.position + new Vector3(0f, moveDelta.y, 0f);
         if (IsPositionWalkable(nextY))
             transform.position = nextY;
+
+        CheckExitReached();
+    }
+
+    // Advances to the next floor only when the player is close to the exit marker's
+    // exact position, not just anywhere inside the (potentially large) exit room.
+    void CheckExitReached()
+    {
+        RectInt exit = dungeon.ExitRoom;
+        Vector2Int center = new Vector2Int(
+            exit.x + exit.width / 2,
+            exit.y + exit.height / 2
+        );
+        Vector3 exitWorldPos = dungeon.tilemapCA.transform.position + new Vector3(center.x, center.y, 0f);
+
+        if (Vector3.Distance(transform.position, exitWorldPos) <= exitTriggerRadius)
+            dungeon.AdvanceToNextFloor();
     }
 
     bool IsPositionWalkable(Vector3 worldPos)
