@@ -144,12 +144,30 @@ public class EnemyAI : MonoBehaviour
             HandlePatrol(justSwitched);
     }
 
+    [Header("Combat")]
+    [Tooltip("Seconds between contact-damage ticks while within closeRangeDistance of the player.")]
+    public float damageTickInterval = 1f;
+    private float damageTickTimer;
+
     void HandleChase(Vector2Int playerGridPos, float distToPlayer, bool justSwitched)
     {
         if (distToPlayer <= closeRangeDistance)
         {
             MoveDirectlyTowardsPlayerSafe();
+
+            damageTickTimer -= Time.deltaTime;
+            if (damageTickTimer <= 0f)
+            {
+                PlayerHealth ph = player.GetComponent<PlayerHealth>();
+                if (ph != null)
+                    ph.TakeDamage(currentDamage);
+                damageTickTimer = damageTickInterval;
+            }
             return;
+        }
+        else
+        {
+            damageTickTimer = 0f; // reset so stepping back into range ticks immediately
         }
 
         bool playerMoved = playerGridPos != lastPlayerGridPos;

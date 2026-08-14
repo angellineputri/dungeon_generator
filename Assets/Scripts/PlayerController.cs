@@ -86,6 +86,7 @@ public class PlayerController : MonoBehaviour
             transform.position = nextY;
 
         CheckExitReached();
+        CheckPotionPickups();
     }
 
     // Advances to the next floor only when the player is close to the exit marker's
@@ -101,6 +102,16 @@ public class PlayerController : MonoBehaviour
 
         if (Vector3.Distance(transform.position, exitWorldPos) <= exitTriggerRadius)
             dungeon.AdvanceToNextFloor();
+    }
+
+    void CheckPotionPickups()
+    {
+        PlayerHealth health = GetComponent<PlayerHealth>();
+        // FindObjectsByType is fine here — potion counts per floor are tiny (1-3),
+        // this isn't a hot path that needs a cached registry.
+        PotionPickup[] potions = FindObjectsByType<PotionPickup>(FindObjectsSortMode.None);
+        foreach (var potion in potions)
+            potion.TryCollect(transform.position, health);
     }
 
     bool IsPositionWalkable(Vector3 worldPos)

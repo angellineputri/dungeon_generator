@@ -1,0 +1,143 @@
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Tilemaps;
+
+/// <summary>
+/// Radius-based fog of war (not line-of-sight — see report Section 2/3 for why that
+/// tradeoff was made given the timeline). Three tiers per tile:
+///   - Never seen: fully opaque black
+///   - Explored but not currently visible: dimmed, remembered
+///   - Currently visible: fully clear
+///
+/// Recomputes only when the player crosses into a new grid tile, not every frame,
+/// since nothing here needs sub-tile precision and it keeps this cheap even though
+/// it's an unoptimized full-tilemap approach.
+/// </summary>
+public class FogOfWar : MonoBehaviour
+{
+    [Header("References")]
+    public DungeonGenerator dungeon;
+    public Transform player;
+    [Tooltip("A separate, empty Tilemap sibling to tilemapCA, rendered above everything else.")]
+    public Tilemap fogTilemap;
+
+    [Header("Visibility")]
+    public float visionRadius = 6f;
+    [Range(0f, 1f)] public float unexploredAlpha = 1f;
+    [Range(0f, 1f)] public float exploredAlpha = 0.6f;
+    [Range(0f, 1f)] public float visibleAlpha = 0f;
+
+    private bool[,] explored;
+    private Tile fogTile;
+    private int gridWidth, gridHeight;
+    private Vector2Int lastPlayerGridPos = new Vector2Int(int.MinValue, int.MinValue);
+    private readonly List<Vector3Int> currentlyVisibleCells = new List<Vector3Int>();
+
+    void Awake()
+    {
+        fogTile = BuildSolidTile();
+    }
+
+    void OnEnable()
+    {
+        if (dungeon != null)
+            dungeon.OnFloorGenerated += ResetFog;
+    }
+
+    void OnDisable()
+    {
+        if (dungeon != null)
+            dungeon.OnFloorGenerated -= ResetFog;
+    }
+
+    void Start()
+    {
+        if (dungeon != null && dungeon.CurrentFloor > 0)
+            ResetFog();
+    }
+
+    void ResetFog()
+    {
+        gridWidth = dungeon.GridWidth;
+        gridHeight = dungeon.GridHeight;
+        explored = new bool[gridWidth, gridHeight];
+        currentlyVisibleCells.Clear();
+
+        fogTilemap.ClearAllTiles();
+        for (int x = 0; x < gridWidth; x++)
+        {
+            for (int y = 0; y < gridHeight; y++)
+            {
+                Vector3Int pos = new Vector3Int(x, y, 0);
+                fogTilemap.SetTile(pos, fogTile);
+                fogTilemap.SetTileFlags(pos, TileFlags.None);
+                fogTilemap.SetColor(pos, new Color(0, 0, 0, unexploredAlpha));
+            }
+        }
+
+        lastPlayerGridPos = new Vector2Int(int.MinValue, int.MinValue);
+    }
+
+    void Update()
+    {
+        if (explored == null || player == null || dungeon.tilemapCA == null) return;
+
+        Vector2Int playerGrid = WorldToGrid(player.position);
+        if (playerGrid == lastPlayerGridPos) return;
+        lastPlayerGridPos = playerGrid;
+
+        UpdateVisibility(playerGrid);
+    }
+
+    void UpdateVisibility(Vector2Int center)
+    {
+        // Dim previously-visible cells back down to "remembered" before computing
+        // the new visible set — otherwise tiles the player has walked away from
+        // would stay permanently fully clear instead of fading to explored.
+        foreach (var pos in currentlyVisibleCells)
+            fogTilemap.SetColor(pos, new Color(0, 0, 0, exploredAlpha));
+        currentlyVisibleCells.Clear();
+
+        int r = Mathf.CeilToInt(visionRadius);
+        for (int dx = -r; dx <= r; dx++)
+        {
+            for (int dy = -r; dy <= r; dy++)
+            {
+                int x = center.x + dx;
+                int y = center.y + dy;
+                if (x < 0 || x >= gridWidth || y < 0 || y >= gridHeight) continue;
+
+                float dist = Vector2.Distance(new Vector2(x, y), new Vector2(center.x, center.y));
+                if (dist > visionRadius) continue;
+
+                explored[x, y] = true;
+                Vector3Int pos = new Vector3Int(x, y, 0);
+                fogTilemap.SetColor(pos, new Color(0, 0, 0, visibleAlpha));
+                currentlyVisibleCells.Add(pos);
+            }
+        }
+    }
+
+    Vector2Int WorldToGrid(Vector3 worldPos)
+    {
+        Vector3 local = worldPos - dungeon.tilemapCA.transform.position;
+        return new Vector2Int(Mathf.RoundToInt(local.x), Mathf.RoundToInt(local.y));
+    }
+
+    // Procedural solid-white 4x4 sprite — alpha is controlled entirely per-cell via
+    // Tilemap.SetColor, so the base sprite just needs to be opaque white.
+    Tile BuildSolidTile()
+    {
+        Texture2D tex = new Texture2D(4, 4);
+        Color[] pixels = new Color[16];
+        for (int i = 0; i < 16; i++) pixels[i] = Color.white;
+        tex.SetPixels(pixels);
+        tex.Apply();
+
+        Sprite sprite = Sprite.Create(tex, new Rect(0, 0, 4, 4), new Vector2(0.5f, 0.5f), 4);
+        Tile t = ScriptableObject.CreateInstance<Tile>();
+        t.sprite = sprite;
+        t.color = Color.white;
+        return t;
+    }
+}

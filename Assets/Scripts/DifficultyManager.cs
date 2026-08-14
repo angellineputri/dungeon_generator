@@ -14,6 +14,7 @@ public struct DifficultyParams
     public float spawnInterval;      // seconds between spawns, lower = harder
     public int minRoomSize;
     public int caIterations;
+    public int potionCount;      // health potions to spawn this floor
 }
 
 public static class DifficultyManager
@@ -44,6 +45,12 @@ public static class DifficultyManager
     private const int CA_ITERATIONS_FLOOR = 2;         // hard minimum smoothing passes
     private const int CA_STEP_EVERY = 4;
 
+    // Potions get scarcer as floors get harder, per the original design (limited
+    // per-floor healing to force active decisions rather than passive stockpiling).
+    // Floor-clamped at 1 so the game never becomes literally unwinnable.
+    private static readonly int[] POTION_COUNT_TIERS = { 3, 2, 1 };
+    private const int POTION_TIER_SIZE = 3;
+
     public static DifficultyParams GetDifficultyParams(int floor)
     {
         floor = Mathf.Max(1, floor);
@@ -71,6 +78,10 @@ public static class DifficultyManager
         int caSteps = (floor - 1) / CA_STEP_EVERY;
         int caIterations = BASE_CA_ITERATIONS - caSteps;
         p.caIterations = Mathf.Max(CA_ITERATIONS_FLOOR, caIterations);
+
+        // Potion count: explicit tier lookup, floors 1-3 / 4-6 / 7-10+
+        int potionTier = Mathf.Min((floor - 1) / POTION_TIER_SIZE, POTION_COUNT_TIERS.Length - 1);
+        p.potionCount = POTION_COUNT_TIERS[potionTier];
 
         return p;
     }

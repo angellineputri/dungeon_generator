@@ -1,26 +1,12 @@
 --- DUNGEON GENERATION LOG ---
-Last 16 runs (max 50)
+Last 2 runs (max 50)
 --------------------------------
 
-Run #1 | Seed: 505991 | Rooms: 10 | Floor Tiles: 2426 | Time: 1005μs | Connected: True
-Run #2 | Seed: 155864 | Rooms: 8 | Floor Tiles: 3057 | Time: 359μs | Connected: True
-Run #3 | Seed: 281680 | Rooms: 7 | Floor Tiles: 2946 | Time: 396μs | Connected: True
-Run #4 | Seed: 393522 | Rooms: 8 | Floor Tiles: 1995 | Time: 424μs | Connected: True
-Run #5 | Seed: 603578 | Rooms: 9 | Floor Tiles: 2404 | Time: 272μs | Connected: True
-Run #6 | Seed: 556319 | Rooms: 8 | Floor Tiles: 2698 | Time: 259μs | Connected: True
-Run #7 | Seed: 688457 | Rooms: 8 | Floor Tiles: 3274 | Time: 336μs | Connected: True
-Run #8 | Seed: 35537 | Rooms: 9 | Floor Tiles: 2190 | Time: 271μs | Connected: True
-Run #9 | Seed: 438849 | Rooms: 7 | Floor Tiles: 1666 | Time: 261μs | Connected: True
-Run #10 | Seed: 149808 | Rooms: 7 | Floor Tiles: 2180 | Time: 266μs | Connected: True
-Run #11 | Seed: 157728 | Rooms: 8 | Floor Tiles: 2252 | Time: 239μs | Connected: True
-Run #12 | Seed: 294553 | Rooms: 8 | Floor Tiles: 1916 | Time: 328μs | Connected: True
-Run #13 | Seed: 570428 | Rooms: 8 | Floor Tiles: 2788 | Time: 307μs | Connected: True
-Run #14 | Seed: 85023 | Rooms: 7 | Floor Tiles: 1731 | Time: 256μs | Connected: True
-Run #15 | Seed: 116812 | Rooms: 9 | Floor Tiles: 2691 | Time: 307μs | Connected: True
-Run #16 | Seed: 998818 | Rooms: 10 | Floor Tiles: 2113 | Time: 267μs | Connected: True
+Run #1 | Seed: 260259 | Rooms: 9 | Floor Tiles: 2342 | Time: 995μs | Connected: True
+Run #2 | Seed: 186475 | Rooms: 8 | Floor Tiles: 2745 | Time: 371μs | Connected: True
 
 --- SUMMARY ---
-Rooms       — Min: 7 | Max: 10 | Avg: 8.2
-Floor Tiles — Min: 1666 | Max: 3274 | Avg: 2395.4
-Time (μs)   — Min: 239 | Max: 1005 | Avg: 347.1
-Connectivity — 16/16 runs fully connected (100.0%)
+Rooms       — Min: 8 | Max: 9 | Avg: 8.5
+Floor Tiles — Min: 2342 | Max: 2745 | Avg: 2543.5
+Time (μs)   — Min: 371 | Max: 995 | Avg: 683.0
+Connectivity — 2/2 runs fully connected (100.0%)
