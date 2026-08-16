@@ -15,6 +15,15 @@ public class PlayerController : MonoBehaviour
     [Tooltip("How close (in tiles) the player must be to the exit marker's exact position to advance, rather than anywhere in the exit room.")]
     public float exitTriggerRadius = 1f;
 
+    [Header("Combat")]
+    [Tooltip("Press F to attack. Deals damage to any enemy within attackRange.")]
+    public float attackDamage = 15f;
+    public float attackRange = 2.2f;
+    public float attackCooldown = 0.9f;
+    [Tooltip("Mana spent per attack. Fizzles (no damage, cooldown still applies) if you don't have enough.")]
+    public float manaCost = 25f;
+    private float attackCooldownTimer;
+
     void OnEnable()
     {
         if (dungeon != null)
@@ -87,6 +96,90 @@ public class PlayerController : MonoBehaviour
 
         CheckExitReached();
         CheckPotionPickups();
+        HandleAttackInput();
+    }
+
+    void HandleAttackInput()
+    {
+        attackCooldownTimer -= Time.deltaTime;
+
+        if (Keyboard.current.fKey.wasPressedThisFrame && attackCooldownTimer <= 0f)
+        {
+            Attack();
+            attackCooldownTimer = attackCooldown;
+        }
+    }
+
+    // Simple radius melee swing — no aiming needed on a top-down grid. Hits every
+    // enemy within attackRange, consistent with the distance-check pattern already
+    // used everywhere else in this project (potion pickup, exit trigger, contact damage).
+    // Costs mana; fizzles with no damage (but cooldown still applies) if you're dry —
+    // that's the actual point, since it's what stops holding F from being free forever.
+    void Attack()
+    {
+        PlayerMana mana = GetComponent<PlayerMana>();
+        if (mana != null && !mana.TrySpend(manaCost))
+        {
+            ShowAttackEffect(false, outOfMana: true);
+            return;
+        }
+
+        EnemyAI[] enemies = FindObjectsByType<EnemyAI>(FindObjectsSortMode.None);
+        bool hitAnything = false;
+
+        foreach (var enemy in enemies)
+        {
+            if (Vector3.Distance(transform.position, enemy.transform.position) <= attackRange)
+            {
+                enemy.TakeDamage(attackDamage);
+                hitAnything = true;
+            }
+        }
+
+        ShowAttackEffect(hitAnything, outOfMana: false);
+    }
+
+    // Brief expanding ring at the player's position so the attack is visible on
+    // screen (and in the demo video) even without a sprite animation system.
+    // Faint blue-gray means "fizzled, out of mana" — distinct from a whiffed
+    // (gray) or landed (yellow) hit so it's clear on screen why nothing happened.
+    void ShowAttackEffect(bool hit, bool outOfMana)
+    {
+        GameObject fx = new GameObject("AttackSwing");
+        fx.transform.position = transform.position;
+
+        SpriteRenderer sr = fx.AddComponent<SpriteRenderer>();
+        sr.sprite = BuildRingSprite();
+        if (outOfMana)
+            sr.color = new Color(0.4f, 0.4f, 0.7f, 0.4f);
+        else
+            sr.color = hit ? new Color(1f, 0.9f, 0.3f) : new Color(0.8f, 0.8f, 0.8f, 0.6f);
+        sr.sortingOrder = 15;
+        fx.transform.localScale = Vector3.one * attackRange * 2f;
+
+        Destroy(fx, 0.12f);
+    }
+
+    Sprite BuildRingSprite()
+    {
+        int size = 48;
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        Vector2 c = new Vector2(size / 2f, size / 2f);
+        float outerR = size / 2f - 2f;
+        float innerR = outerR - 5f;
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float d = Vector2.Distance(new Vector2(x, y), c);
+                bool inRing = d <= outerR && d >= innerR;
+                tex.SetPixel(x, y, inRing ? Color.white : new Color(0, 0, 0, 0));
+            }
+        }
+        tex.Apply();
+
+        return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
     }
 
     // Advances to the next floor only when the player is close to the exit marker's

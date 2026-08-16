@@ -45,6 +45,35 @@ public class EnemyAI : MonoBehaviour
         currentDamage = baseDamage * damageMultiplier;
     }
 
+    // Called by PlayerController.Attack(). currentHP was previously computed by
+    // ApplyDifficulty but nothing consumed it — this closes that loop.
+    public void TakeDamage(float amount)
+    {
+        currentHP -= amount;
+
+        if (currentHP <= 0f)
+            Die();
+        else
+            StartCoroutine(HitFlash());
+    }
+
+    void Die()
+    {
+        Destroy(gameObject);
+    }
+
+    IEnumerator HitFlash()
+    {
+        SpriteRenderer sr = GetComponent<SpriteRenderer>();
+        if (sr == null) yield break;
+
+        Color original = sr.color;
+        sr.color = Color.white;
+        yield return new WaitForSeconds(0.08f);
+        if (sr != null)
+            sr.color = original;
+    }
+
     [Header("Spawn Override")]
     [Tooltip("Set by EnemySpawner right after Instantiate, before Start() runs, so this " +
              "enemy's home room is chosen by the spawner instead of picked randomly.")]
