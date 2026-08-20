@@ -42,6 +42,10 @@ public class DungeonGenerator : MonoBehaviour
     private int currentFloor = 0;
     private RectInt playerSpawnRoom;
     private RectInt exitRoom;
+    private int lastGenAttempts;
+    private long lastGenTimeMicros;
+    private bool lastConnected;
+    private int lastRoomCountMin, lastRoomCountMax;
 
     // --- Public accessors for EnemyAI / Pathfinding / EnemySpawner ---
     public int[,] Grid => grid;
@@ -61,10 +65,30 @@ public class DungeonGenerator : MonoBehaviour
     // Reaching it advances to the next floor.
     public RectInt ExitRoom => exitRoom;
 
+    // Diagnostics from the most recent Generate() call — used by DifficultyTestHarness
+    // to verify each floor generated cleanly (didn't hit the retry ceiling) rather
+    // than needing to parse the human-readable log file.
+    public int LastGenAttempts => lastGenAttempts;
+    public long LastGenTimeMicros => lastGenTimeMicros;
+    public bool LastConnected => lastConnected;
+    public int LastRoomCountMin => lastRoomCountMin;
+    public int LastRoomCountMax => lastRoomCountMax;
+
     // Re-runs the same generation Space already triggers, but callable from other
     // scripts (e.g. PlayerController when the player reaches ExitRoom).
     public void AdvanceToNextFloor()
     {
+        Generate();
+    }
+
+    // Testing-only convenience — jumps straight to a specific floor number with a
+    // freshly generated layout at that difficulty, rather than requiring the player
+    // to actually walk to an exit each time. Floors aren't cached/stored, so this
+    // is a NEW random layout at the target floor's difficulty, not a return to
+    // whatever layout you previously saw at that floor number.
+    public void JumpToFloor(int targetFloor)
+    {
+        currentFloor = Mathf.Max(0, targetFloor - 1);
         Generate();
     }
 
@@ -110,6 +134,28 @@ public class DungeonGenerator : MonoBehaviour
         DifficultyParams diff = DifficultyManager.GetDifficultyParams(nextFloor);
         minRoomSize = diff.minRoomSize;
         caIterations = diff.caIterations;
+        minNodeSize = diff.minNodeSize;
+
+        // Room count target widens on deeper floors too — otherwise every floor,
+        // no matter how far down, would still be forced into the original fixed
+        // 6-10 range even once minNodeSize allows more rooms to actually form.
+        // UNVERIFIED beyond floor 1 — watch the Console for "gave up after N
+        // attempts" warnings, which would mean a floor's target range doesn't
+        // reliably form within the 100-attempt budget below.
+        // Room count target — ramp made faster still, and final cap raised from
+        // 16 to 18. Re-testing the previous fix found floors 10-12 STILL hitting
+        // the retry ceiling: minNodeSize drops to 16 exactly at floor 10, and its
+        // natural output (16-18 rooms, confirmed in test data) already exceeded
+        // the target max (14-15) at that point, since the target didn't reach its
+        // own cap until floor 13. This version reaches its cap by floor ~9,
+        // comfortably ahead of every minNodeSize step-down, with headroom to 18
+        // to absorb occasional high-outlier seeds rather than needing an exact
+        // ceiling match.
+        int roomCountMin = Mathf.Min(16, 6 + (nextFloor - 1) / 3);
+        int roomCountMax = Mathf.Min(18, 10 + (nextFloor - 1));
+        roomCountMin = Mathf.Min(roomCountMin, roomCountMax); // safety: min can never exceed max
+        lastRoomCountMin = roomCountMin;
+        lastRoomCountMax = roomCountMax;
 
         int attempts = 0;
         BSPNode root = null;
@@ -135,11 +181,13 @@ public class DungeonGenerator : MonoBehaviour
             attempts++;
             if (attempts > 100)
             {
-                UnityEngine.Debug.LogWarning($"Gave up after {attempts} attempts, final room count: {rooms.Count}");
+                UnityEngine.Debug.LogWarning($"Gave up after {attempts} attempts, final room count: {rooms.Count} " +
+                    $"(target was {roomCountMin}-{roomCountMax}) | nextFloor={nextFloor} minNodeSize={minNodeSize} minRoomSize={minRoomSize} caIterations={caIterations}");
                 break;
             }
         }
-        while (rooms.Count < 6 || rooms.Count > 10);
+        while (rooms.Count < roomCountMin || rooms.Count > roomCountMax);
+        lastGenAttempts = attempts;
 
         // Player always spawns in the smallest room on the floor — computed here, once,
         // so PlayerController and EnemySpawner both read the same room via PlayerSpawnRoom
@@ -189,6 +237,8 @@ public class DungeonGenerator : MonoBehaviour
                 if (grid[x, y] == 0) floorCount++;
 
         bool connected = CheckConnectivity();
+        lastConnected = connected;
+        lastGenTimeMicros = sw.ElapsedTicks * 1000000L / Stopwatch.Frequency;
         runCounter++;
         currentFloor = nextFloor;
 

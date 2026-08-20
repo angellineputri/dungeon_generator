@@ -2,14 +2,10 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Builds simple filled-bar HP and mana indicators in the bottom-left corner at
-/// runtime, reading off PlayerHealth/PlayerMana on the same GameObject. No manual
-/// Canvas/Image setup needed in the Editor — same "build it in code" approach as
-/// ExitMarker and PotionPickup use for their sprites.
-///
-/// Positioned bottom-left rather than top-left specifically to avoid overlapping
-/// the existing debug metrics panel (Floor/Seed/Rooms/etc text), which already
-/// occupies the top-left corner.
+/// Builds a grouped HP/mana HUD panel in the bottom-left corner at runtime — one
+/// bordered background panel containing both bars with small color-coded icon
+/// squares, rather than two bare floating rectangles. No manual Canvas/Image setup
+/// needed in the Editor, same "build it in code" approach as ExitMarker/PotionPickup.
 /// </summary>
 public class PlayerStatusUI : MonoBehaviour
 {
@@ -21,9 +17,10 @@ public class PlayerStatusUI : MonoBehaviour
     public PlayerMana playerMana;
 
     [Header("Layout")]
-    public Vector2 barSize = new Vector2(200f, 20f);
-    public Vector2 bottomLeftOffset = new Vector2(20f, 20f);
-    public float barSpacing = 28f;
+    public Vector2 barSize = new Vector2(180f, 16f);
+    public Vector2 topLeftOffset = new Vector2(16f, -16f);
+    public float barSpacing = 26f;
+    public float panelPadding = 12f;
 
     private Image healthFill;
     private Image manaFill;
@@ -40,23 +37,55 @@ public class PlayerStatusUI : MonoBehaviour
             return;
         }
 
-        healthFill = BuildBar("HealthBar", bottomLeftOffset, new Color(0.85f, 0.25f, 0.25f));
-        manaFill = BuildBar("ManaBar", bottomLeftOffset + new Vector2(0, barSpacing), new Color(0.25f, 0.45f, 0.85f));
+        BuildPanel();
     }
 
-    void Update()
+    void BuildPanel()
     {
-        if (healthFill != null && playerHealth != null)
-            healthFill.fillAmount = playerHealth.CurrentHealth / playerHealth.maxHealth;
+        // Single bordered backdrop grouping both bars, so they read as one HUD
+        // widget instead of two unrelated rectangles floating in space.
+        float panelW = barSize.x + panelPadding * 2f + 22f; // +22 for the icon column
+        float panelH = barSpacing * 2f + panelPadding * 1.5f;
 
-        if (manaFill != null && playerMana != null)
-            manaFill.fillAmount = playerMana.CurrentMana / playerMana.maxMana;
+        GameObject panel = new GameObject("StatusPanel", typeof(RectTransform), typeof(Image));
+        panel.transform.SetParent(canvas.transform, false);
+        RectTransform panelRT = panel.GetComponent<RectTransform>();
+        panelRT.anchorMin = new Vector2(0, 1);
+        panelRT.anchorMax = new Vector2(0, 1);
+        panelRT.pivot = new Vector2(0, 1);
+        panelRT.anchoredPosition = topLeftOffset;
+        panelRT.sizeDelta = new Vector2(panelW, panelH);
+        Image panelImg = panel.GetComponent<Image>();
+        panelImg.sprite = BuildSolidSprite();
+        panelImg.color = new Color(0.05f, 0.05f, 0.06f, 0.72f);
+
+        // Thin border via a slightly larger dark rect behind the panel.
+        GameObject border = new GameObject("StatusPanel_Border", typeof(RectTransform), typeof(Image));
+        border.transform.SetParent(canvas.transform, false);
+        border.transform.SetSiblingIndex(panel.transform.GetSiblingIndex());
+        RectTransform borderRT = border.GetComponent<RectTransform>();
+        borderRT.anchorMin = new Vector2(0, 1);
+        borderRT.anchorMax = new Vector2(0, 1);
+        borderRT.pivot = new Vector2(0, 1);
+        borderRT.anchoredPosition = new Vector2(topLeftOffset.x - 2, topLeftOffset.y + 2);
+        borderRT.sizeDelta = new Vector2(panelW + 4, panelH + 4);
+        Image borderImg = border.GetComponent<Image>();
+        borderImg.sprite = BuildSolidSprite();
+        borderImg.color = new Color(0.85f, 0.83f, 0.78f, 0.35f);
+
+        Vector2 innerPos = new Vector2(panelPadding + 22f, panelH - panelPadding - barSize.y);
+        healthFill = BuildBarInsidePanel(panel.transform, "HealthBar", innerPos, new Color(0.85f, 0.25f, 0.25f));
+        BuildIcon(panel.transform, new Vector2(panelPadding, innerPos.y + 1f), new Color(0.85f, 0.25f, 0.25f));
+
+        Vector2 innerPos2 = innerPos - new Vector2(0, barSpacing);
+        manaFill = BuildBarInsidePanel(panel.transform, "ManaBar", innerPos2, new Color(0.25f, 0.45f, 0.85f));
+        BuildIcon(panel.transform, new Vector2(panelPadding, innerPos2.y + 1f), new Color(0.25f, 0.45f, 0.85f));
     }
 
-    Image BuildBar(string name, Vector2 anchoredPos, Color fillColor)
+    Image BuildBarInsidePanel(Transform parent, string name, Vector2 anchoredPos, Color fillColor)
     {
         GameObject bg = new GameObject(name + "_BG", typeof(RectTransform), typeof(Image));
-        bg.transform.SetParent(canvas.transform, false);
+        bg.transform.SetParent(parent, false);
         RectTransform bgRT = bg.GetComponent<RectTransform>();
         bgRT.anchorMin = new Vector2(0, 0);
         bgRT.anchorMax = new Vector2(0, 0);
@@ -65,15 +94,15 @@ public class PlayerStatusUI : MonoBehaviour
         bgRT.sizeDelta = barSize;
         Image bgImg = bg.GetComponent<Image>();
         bgImg.sprite = BuildSolidSprite();
-        bgImg.color = new Color(0.1f, 0.1f, 0.1f, 0.8f);
+        bgImg.color = new Color(0.15f, 0.15f, 0.15f, 0.9f);
 
         GameObject fill = new GameObject(name + "_Fill", typeof(RectTransform), typeof(Image));
         fill.transform.SetParent(bg.transform, false);
         RectTransform fillRT = fill.GetComponent<RectTransform>();
         fillRT.anchorMin = Vector2.zero;
         fillRT.anchorMax = Vector2.one;
-        fillRT.offsetMin = new Vector2(2, 2);
-        fillRT.offsetMax = new Vector2(-2, -2);
+        fillRT.offsetMin = new Vector2(1.5f, 1.5f);
+        fillRT.offsetMax = new Vector2(-1.5f, -1.5f);
         Image fillImg = fill.GetComponent<Image>();
         fillImg.sprite = BuildSolidSprite();
         fillImg.color = fillColor;
@@ -83,6 +112,32 @@ public class PlayerStatusUI : MonoBehaviour
         fillImg.fillAmount = 1f;
 
         return fillImg;
+    }
+
+    // Small color-coded square to the left of each bar — cheap stand-in for a real
+    // heart/droplet icon, at least visually distinguishes HP from mana at a glance.
+    void BuildIcon(Transform parent, Vector2 anchoredPos, Color color)
+    {
+        GameObject icon = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+        icon.transform.SetParent(parent, false);
+        RectTransform rt = icon.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0, 0);
+        rt.anchorMax = new Vector2(0, 0);
+        rt.pivot = new Vector2(0, 0);
+        rt.anchoredPosition = anchoredPos;
+        rt.sizeDelta = new Vector2(14, 14);
+        Image img = icon.GetComponent<Image>();
+        img.sprite = BuildSolidSprite();
+        img.color = color;
+    }
+
+    void Update()
+    {
+        if (healthFill != null && playerHealth != null)
+            healthFill.fillAmount = playerHealth.CurrentHealth / playerHealth.maxHealth;
+
+        if (manaFill != null && playerMana != null)
+            manaFill.fillAmount = playerMana.CurrentMana / playerMana.maxMana;
     }
 
     Sprite BuildSolidSprite()

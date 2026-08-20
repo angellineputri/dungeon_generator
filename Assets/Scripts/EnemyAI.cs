@@ -100,6 +100,10 @@ public class EnemyAI : MonoBehaviour
     {
         currentHP = baseHP;
         currentDamage = baseDamage;
+        // Starts primed at a full interval, not 0, so an enemy can never land an
+        // instant free hit the moment it first reaches contact range — same fix
+        // applied below for re-entering range after stepping back out.
+        damageTickTimer = damageTickInterval;
         StartCoroutine(SpawnAtValidPosition());
     }
 
@@ -196,7 +200,9 @@ public class EnemyAI : MonoBehaviour
         }
         else
         {
-            damageTickTimer = 0f; // reset so stepping back into range ticks immediately
+            // Full interval, not 0 — stepping back into range after breaking away
+            // gives the same grace period as a first contact, not a free instant hit.
+            damageTickTimer = damageTickInterval;
         }
 
         bool playerMoved = playerGridPos != lastPlayerGridPos;

@@ -28,6 +28,7 @@ public class FogOfWar : MonoBehaviour
     [Range(0f, 1f)] public float visibleAlpha = 0f;
 
     private bool[,] explored;
+    public bool[,] Explored => explored;
     private Tile fogTile;
     private int gridWidth, gridHeight;
     private Vector2Int lastPlayerGridPos = new Vector2Int(int.MinValue, int.MinValue);
@@ -89,6 +90,10 @@ public class FogOfWar : MonoBehaviour
         UpdateVisibility(playerGrid);
     }
 
+    [Header("Edge Softening")]
+    [Tooltip("Tiles this many units wide, right at the vision boundary, fade gradually instead of cutting off sharply. This is what smooths the otherwise blocky/pixelated circle edge.")]
+    public float featherWidth = 2.5f;
+
     void UpdateVisibility(Vector2Int center)
     {
         // Dim previously-visible cells back down to "remembered" before computing
@@ -110,9 +115,16 @@ public class FogOfWar : MonoBehaviour
                 float dist = Vector2.Distance(new Vector2(x, y), new Vector2(center.x, center.y));
                 if (dist > visionRadius) continue;
 
+                // Fully lit inside (visionRadius - featherWidth); graded from
+                // visibleAlpha to exploredAlpha across the outer feather band,
+                // instead of a hard on/off cutoff at exactly visionRadius.
+                float innerEdge = Mathf.Max(0f, visionRadius - featherWidth);
+                float t = Mathf.InverseLerp(innerEdge, visionRadius, dist);
+                float alpha = Mathf.Lerp(visibleAlpha, exploredAlpha, t);
+
                 explored[x, y] = true;
                 Vector3Int pos = new Vector3Int(x, y, 0);
-                fogTilemap.SetColor(pos, new Color(0, 0, 0, visibleAlpha));
+                fogTilemap.SetColor(pos, new Color(0, 0, 0, alpha));
                 currentlyVisibleCells.Add(pos);
             }
         }

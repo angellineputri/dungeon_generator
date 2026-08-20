@@ -141,6 +141,10 @@ public class PlayerController : MonoBehaviour
 
     // Brief expanding ring at the player's position so the attack is visible on
     // screen (and in the demo video) even without a sprite animation system.
+    // The ring's world-space diameter is derived to exactly match attackRange
+    // (localScale = attackRange * 2, sprite's native diameter is 1 unit), so
+    // bumping attackRange automatically makes the visible circle bigger too —
+    // no separate "circle size" value to keep in sync.
     // Faint blue-gray means "fizzled, out of mana" — distinct from a whiffed
     // (gray) or landed (yellow) hit so it's clear on screen why nothing happened.
     void ShowAttackEffect(bool hit, bool outOfMana)

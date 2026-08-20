@@ -2,10 +2,10 @@
 Last 1 runs (max 50)
 --------------------------------
 
-Run #1 | Seed: 411445 | Rooms: 10 | Floor Tiles: 2017 | Time: 1120μs | Connected: True
+Run #1 | Seed: 625525 | Rooms: 9 | Floor Tiles: 2569 | Time: 1096μs | Connected: True
 
 --- SUMMARY ---
-Rooms       — Min: 10 | Max: 10 | Avg: 10.0
-Floor Tiles — Min: 2017 | Max: 2017 | Avg: 2017.0
-Time (μs)   — Min: 1120 | Max: 1120 | Avg: 1120.0
+Rooms       — Min: 9 | Max: 9 | Avg: 9.0
+Floor Tiles — Min: 2569 | Max: 2569 | Avg: 2569.0
+Time (μs)   — Min: 1096 | Max: 1096 | Avg: 1096.0
 Connectivity — 1/1 runs fully connected (100.0%)

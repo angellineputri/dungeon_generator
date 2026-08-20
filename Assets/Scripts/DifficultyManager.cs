@@ -14,6 +14,7 @@ public struct DifficultyParams
     public float spawnInterval;      // seconds between spawns, lower = harder
     public int minRoomSize;
     public int caIterations;
+    public int minNodeSize;      // controls BSP split depth, i.e. room COUNT (separate from minRoomSize, which controls room dimensions)
     public int potionCount;      // health potions to spawn this floor
 }
 
@@ -23,27 +24,40 @@ public static class DifficultyManager
     private const float HP_GROWTH_PER_FLOOR = 0.15f;
     private const float DAMAGE_GROWTH_PER_FLOOR = 0.10f;
 
-    // Enemy count now uses explicit tiers rather than a linear step, so it can
-    // accelerate faster in the later floors. Old curve topped out at 7 by floor
-    // 9-10, which never exceeded typical room count (6-10) — enemies would rarely
-    // stack more than 1 per room. This curve reaches 15 by floor 9-10, so once
-    // EnemySpawner distributes that budget across ~6-10 rooms, later floors
-    // reliably produce 2+ enemies in multiple rooms, not just 1-per-room at best.
-    private static readonly int[] ENEMY_COUNT_TIERS = { 3, 5, 8, 11, 15 };
+    // Enemy count uses explicit tiers through floor 19, then grows linearly
+    // beyond that (see ENEMY_COUNT_LINEAR_START_FLOOR below). The tier array
+    // alone used to plateau hard at 42 from floor 19 onward, confirmed via the
+    // 100-floor harness — every floor from 19 to 100 produced an identical
+    // enemyCount, since Mathf.Min was clamping to the last array index forever.
+    private static readonly int[] ENEMY_COUNT_TIERS = { 3, 5, 8, 11, 15, 19, 24, 29, 35, 42 };
     private const int ENEMY_COUNT_TIER_SIZE = 2;
+    private const int ENEMY_COUNT_CAP = 90;
+    // Floor at which the tier array runs out (floor 19, tier index 9) — enemy
+    // count grows +1 per floor beyond this point instead of freezing at 42.
+    private const int ENEMY_COUNT_LINEAR_START_FLOOR = 19;
 
-    // Explicit tier values (floors 1-3, 4-6, 7-9, 10+) rather than a formula,
-    // since the approved steps (8 -> 6 -> 4.5 -> 3.5) aren't evenly spaced.
-    private static readonly float[] SPAWN_INTERVAL_TIERS = { 8f, 6f, 4.5f, 3.5f };
+    // Extended alongside enemy count for the same reason — floors 10+ were all
+    // stuck at 3.5s forever. Slows its own rate of change near the end (3.5 -> 3
+    // -> 2.5 -> 2.2) rather than continuing to drop sharply, since spawn timing
+    // approaching 0 would eventually break rather than just get harder.
+    private static readonly float[] SPAWN_INTERVAL_TIERS = { 8f, 6f, 4.5f, 3.5f, 3f, 2.5f, 2.2f };
     private const int SPAWN_TIER_SIZE = 3;
 
     private const int BASE_MIN_ROOM_SIZE = 8;
-    private const int MIN_ROOM_SIZE_FLOOR = 6;         // hard minimum room size
+    private const int MIN_ROOM_SIZE_FLOOR = 5;         // was 6 — one more step of room-size escalation
     private const int ROOM_SIZE_STEP_EVERY = 3;
 
     private const int BASE_CA_ITERATIONS = 3;
     private const int CA_ITERATIONS_FLOOR = 2;         // hard minimum smoothing passes
     private const int CA_STEP_EVERY = 4;
+
+    // Controls BSP split depth (room COUNT), separate from minRoomSize (room
+    // dimensions). BASE was 28, but the report documents 22 as the value that
+    // reliably produces 6-10 rooms — corrected to match the report's already
+    // validated value.
+    private const int BASE_MIN_NODE_SIZE = 22;
+    private const int MIN_NODE_SIZE_FLOOR = 14;         // shifted down proportionally from the old 28->18 spread
+    private const int NODE_SIZE_STEP_EVERY = 3;
 
     // Potions get scarcer as floors get harder, per the original design (limited
     // per-floor healing to force active decisions rather than passive stockpiling).
@@ -61,9 +75,20 @@ public static class DifficultyManager
         p.enemyHpMultiplier = 1f + HP_GROWTH_PER_FLOOR * (floor - 1);
         p.enemyDamageMultiplier = 1f + DAMAGE_GROWTH_PER_FLOOR * (floor - 1);
 
-        // Enemy count: explicit tier lookup (floors 1-2, 3-4, 5-6, 7-8, 9-10+)
-        int countTier = Mathf.Min((floor - 1) / ENEMY_COUNT_TIER_SIZE, ENEMY_COUNT_TIERS.Length - 1);
-        p.enemyCount = ENEMY_COUNT_TIERS[countTier];
+        // Enemy count: tier lookup through floor 19, then +1 enemy per floor
+        // beyond that, capped at ENEMY_COUNT_CAP.
+        int enemyCount;
+        if (floor <= ENEMY_COUNT_LINEAR_START_FLOOR)
+        {
+            int countTier = (floor - 1) / ENEMY_COUNT_TIER_SIZE;
+            enemyCount = ENEMY_COUNT_TIERS[countTier];
+        }
+        else
+        {
+            int floorsPastStart = floor - ENEMY_COUNT_LINEAR_START_FLOOR;
+            enemyCount = ENEMY_COUNT_TIERS[ENEMY_COUNT_TIERS.Length - 1] + floorsPastStart;
+        }
+        p.enemyCount = Mathf.Min(enemyCount, ENEMY_COUNT_CAP);
 
         // Spawn rate: explicit tier lookup (floors 1-3, 4-6, 7-9, 10+)
         int spawnTier = Mathf.Min((floor - 1) / SPAWN_TIER_SIZE, SPAWN_INTERVAL_TIERS.Length - 1);
@@ -78,6 +103,12 @@ public static class DifficultyManager
         int caSteps = (floor - 1) / CA_STEP_EVERY;
         int caIterations = BASE_CA_ITERATIONS - caSteps;
         p.caIterations = Mathf.Max(CA_ITERATIONS_FLOOR, caIterations);
+
+        // Min node size: threshold every N floors, shrinks, clamped — this is
+        // what actually grows room COUNT on deeper floors, separate from room size.
+        int nodeSteps = (floor - 1) / NODE_SIZE_STEP_EVERY;
+        int minNodeSize = BASE_MIN_NODE_SIZE - nodeSteps * 2;
+        p.minNodeSize = Mathf.Max(MIN_NODE_SIZE_FLOOR, minNodeSize);
 
         // Potion count: explicit tier lookup, floors 1-3 / 4-6 / 7-10+
         int potionTier = Mathf.Min((floor - 1) / POTION_TIER_SIZE, POTION_COUNT_TIERS.Length - 1);
