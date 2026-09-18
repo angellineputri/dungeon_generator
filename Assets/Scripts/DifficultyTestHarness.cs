@@ -49,6 +49,7 @@ public class DifficultyTestHarness : MonoBehaviour
         public int floor, rooms, roomTargetMin, roomTargetMax, genAttempts;
         public long genTimeMicros;
         public bool connected;
+        public int connectivityRetries;
         public int enemyBudget, enemiesActual, potionBudget, potionsActual;
         public float hpMultiplier, damageMultiplier;
         public int minRoomSize, caIterations, minNodeSize;
@@ -73,14 +74,18 @@ public class DifficultyTestHarness : MonoBehaviour
         Debug.Log($"[DifficultyTestHarness] Starting batch test: floors 1-{floorsToTest}...");
 
         var results = new List<FloorResult>(floorsToTest);
+        // File output is Editor-only. Under WebGL Application.dataPath is a URL and
+        // StreamWriter throws, so the whole CSV path is compiled out — the test loop
+        // itself still runs (harmless), it just produces no file.
+#if !UNITY_WEBGL
         string csvPath = Path.Combine(Application.dataPath, "difficulty_test_log.csv");
-
-        using (StreamWriter csv = new StreamWriter(csvPath, false))
+        StreamWriter csv = new StreamWriter(csvPath, false);
+        csv.WriteLine("Floor,Rooms,RoomTargetMin,RoomTargetMax,GenAttempts,GenTimeMicros,Connected," +
+                      "EnemyBudget,EnemiesActual,PotionBudget,PotionsActual," +
+                      "HPMultiplier,DamageMultiplier,MinRoomSize,CAIterations,MinNodeSize,SpawnInterval,ConnectivityRetries");
+        try
         {
-            csv.WriteLine("Floor,Rooms,RoomTargetMin,RoomTargetMax,GenAttempts,GenTimeMicros,Connected," +
-                          "EnemyBudget,EnemiesActual,PotionBudget,PotionsActual," +
-                          "HPMultiplier,DamageMultiplier,MinRoomSize,CAIterations,MinNodeSize,SpawnInterval");
-
+#endif
             for (int floor = 1; floor <= floorsToTest; floor++)
             {
                 dungeon.JumpToFloor(floor);
@@ -104,6 +109,7 @@ public class DifficultyTestHarness : MonoBehaviour
                     genAttempts = dungeon.LastGenAttempts,
                     genTimeMicros = dungeon.LastGenTimeMicros,
                     connected = dungeon.LastConnected,
+                    connectivityRetries = dungeon.LastConnectivityRetries,
                     enemyBudget = diff.enemyCount,
                     enemiesActual = actualEnemies,
                     potionBudget = diff.potionCount,
@@ -117,12 +123,15 @@ public class DifficultyTestHarness : MonoBehaviour
                 };
                 results.Add(r);
 
+#if !UNITY_WEBGL
                 csv.WriteLine(string.Join(",",
                     r.floor, r.rooms, r.roomTargetMin, r.roomTargetMax, r.genAttempts, r.genTimeMicros,
                     r.connected, r.enemyBudget, r.enemiesActual, r.potionBudget, r.potionsActual,
                     r.hpMultiplier.ToString("F2"), r.damageMultiplier.ToString("F2"),
-                    r.minRoomSize, r.caIterations, r.minNodeSize, r.spawnInterval.ToString("F1")
+                    r.minRoomSize, r.caIterations, r.minNodeSize, r.spawnInterval.ToString("F1"),
+                    r.connectivityRetries
                 ));
+#endif
 
                 if (r.genAttempts > 20)
                     Debug.LogWarning($"[DifficultyTestHarness] Floor {floor} took {r.genAttempts} generation attempts — target range {r.roomTargetMin}-{r.roomTargetMax} may be too tight.");
@@ -133,12 +142,22 @@ public class DifficultyTestHarness : MonoBehaviour
 
                 yield return null;
             }
+#if !UNITY_WEBGL
         }
+        finally
+        {
+            csv.Dispose();
+        }
+#endif
 
         WriteHumanReadableSummary(results);
 
+#if !UNITY_WEBGL
         Debug.Log($"[DifficultyTestHarness] Done. CSV: {csvPath}");
         Debug.Log($"[DifficultyTestHarness] Summary: {Path.Combine(Application.dataPath, "difficulty_test_summary.txt")}");
+#else
+        Debug.Log("[DifficultyTestHarness] Done. File output is disabled on WebGL.");
+#endif
         running = false;
     }
 
@@ -147,7 +166,9 @@ public class DifficultyTestHarness : MonoBehaviour
     // screenshotted for the report, not parsed by a spreadsheet.
     void WriteHumanReadableSummary(List<FloorResult> results)
     {
+#if !UNITY_WEBGL
         string path = Path.Combine(Application.dataPath, "difficulty_test_summary.txt");
+#endif
         var sb = new StringBuilder();
 
         sb.AppendLine("Difficulty Test Harness — Summary");
@@ -219,6 +240,8 @@ public class DifficultyTestHarness : MonoBehaviour
         int mismatchCount = results.Count(r => System.Math.Abs(r.enemiesActual - r.enemyBudget) > r.enemyBudget / 2);
         sb.AppendLine($"Enemy spawn mismatches (>50% under budget): {mismatchCount}/{results.Count} floors");
 
+#if !UNITY_WEBGL
         File.WriteAllText(path, sb.ToString());
+#endif
     }
 }

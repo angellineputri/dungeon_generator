@@ -13,8 +13,14 @@ public class DungeonGenerator : MonoBehaviour
     public int gridHeight = 80;
 
     [Header("BSP Settings")]
-    public int minNodeSize = 28;
     public int minRoomSize = 8;
+
+    // BSP split threshold (controls room COUNT). Deliberately NOT exposed in the
+    // Inspector: Generate() overwrites it on every call from DifficultyManager
+    // (floor 1 = BASE_MIN_NODE_SIZE = 22), so any authored default would be dead
+    // and contradict the effective runtime value. Kept private/runtime-only so
+    // the effective value is unambiguous.
+    private int minNodeSize;
 
     [Header("CA Settings")]
     public int caIterations = 3;
@@ -46,6 +52,7 @@ public class DungeonGenerator : MonoBehaviour
     private long lastGenTimeMicros;
     private bool lastConnected;
     private int lastRoomCountMin, lastRoomCountMax;
+    private int lastConnectivityRetries;
 
     // --- Public accessors for EnemyAI / Pathfinding / EnemySpawner ---
     public int[,] Grid => grid;
@@ -73,6 +80,11 @@ public class DungeonGenerator : MonoBehaviour
     public bool LastConnected => lastConnected;
     public int LastRoomCountMin => lastRoomCountMin;
     public int LastRoomCountMax => lastRoomCountMax;
+
+    // Number of full-pipeline outer attempts the last Generate() call needed to
+    // produce a fully-connected floor (1 = connected on the first try). Equals the
+    // ceiling if it gave up; surfaced so DifficultyTestHarness can log it.
+    public int LastConnectivityRetries => lastConnectivityRetries;
 
     // Re-runs the same generation Space already triggers, but callable from other
     // scripts (e.g. PlayerController when the player reaches ExitRoom).
@@ -112,11 +124,15 @@ public class DungeonGenerator : MonoBehaviour
 
     private List<GenerationLog> logs = new List<GenerationLog>();
     private int runCounter = 0;
+#if !UNITY_WEBGL
     private string logPath;
+#endif
 
     void Start()
     {
+#if !UNITY_WEBGL
         logPath = Path.Combine(Application.dataPath, "generation_log.txt");
+#endif
         Generate();
     }
 
@@ -157,37 +173,87 @@ public class DungeonGenerator : MonoBehaviour
         lastRoomCountMin = roomCountMin;
         lastRoomCountMax = roomCountMax;
 
-        int attempts = 0;
+        // Outer attempt loop: the ENTIRE pipeline (room-count loop -> corridors ->
+        // CA -> connectivity check) is re-run from scratch until CheckConnectivity()
+        // passes, or we hit the ceiling. This deliberately wraps the whole pipeline
+        // instead of folding the stopwatch / ConnectAllRooms / ApplyCellularAutomata
+        // into the inner room-count do/while — a previous version that did so caused
+        // an infinite hang and a lost BSP root reference.
+        const int maxOuterAttempts = 25;
+        int outerAttempts = 0;
+        int innerAttempts = 0;
+        bool connected = false;
         BSPNode root = null;
+        int[,] gridBSP = null, gridRW = null, gridCA = null;
 
         Stopwatch sw = Stopwatch.StartNew();
 
         do
         {
-            currentSeed = Random.Range(0, 999999);
-            Random.InitState(currentSeed);
+            outerAttempts++;
 
-            grid = new int[gridWidth, gridHeight];
-            for (int x = 0; x < gridWidth; x++)
-                for (int y = 0; y < gridHeight; y++)
-                    grid[x, y] = 1;
-
-            rooms = new List<RectInt>();
-
-            root = new BSPNode(0, 0, gridWidth, gridHeight);
-            SplitNode(root);
-            CarveRooms(root);
-
-            attempts++;
-            if (attempts > 100)
+            // Inner room-count loop: nothing but layout generation lives in here.
+            innerAttempts = 0;
+            root = null;
+            do
             {
-                UnityEngine.Debug.LogWarning($"Gave up after {attempts} attempts, final room count: {rooms.Count} " +
-                    $"(target was {roomCountMin}-{roomCountMax}) | nextFloor={nextFloor} minNodeSize={minNodeSize} minRoomSize={minRoomSize} caIterations={caIterations}");
-                break;
+                currentSeed = Random.Range(0, 999999);
+                Random.InitState(currentSeed);
+
+                grid = new int[gridWidth, gridHeight];
+                for (int x = 0; x < gridWidth; x++)
+                    for (int y = 0; y < gridHeight; y++)
+                        grid[x, y] = 1;
+
+                rooms = new List<RectInt>();
+
+                root = new BSPNode(0, 0, gridWidth, gridHeight);
+                SplitNode(root);
+                CarveRooms(root);
+
+                innerAttempts++;
+                if (innerAttempts > 100)
+                {
+                    UnityEngine.Debug.LogWarning($"Gave up after {innerAttempts} attempts, final room count: {rooms.Count} " +
+                        $"(target was {roomCountMin}-{roomCountMax}) | nextFloor={nextFloor} minNodeSize={minNodeSize} minRoomSize={minRoomSize} caIterations={caIterations}");
+                    break;
+                }
             }
+            while (rooms.Count < roomCountMin || rooms.Count > roomCountMax);
+
+            // stage 1 - BSP only
+            gridBSP = CopyGrid(grid);
+
+            // stage 2 - random walk corridors on top of BSP
+            ConnectAllRooms(root);
+            gridRW = CopyGrid(grid);
+
+            // stage 3 - CA smoothing on top of RW
+            ApplyCellularAutomata(caIterations);
+            gridCA = CopyGrid(grid);
+
+            // Gate the floor on full connectivity. If it fails we throw the whole
+            // layout away and start a fresh outer attempt rather than shipping a
+            // floor with unreachable rooms.
+            connected = CheckConnectivity();
         }
-        while (rooms.Count < roomCountMin || rooms.Count > roomCountMax);
-        lastGenAttempts = attempts;
+        while (!connected && outerAttempts < maxOuterAttempts);
+
+        sw.Stop();
+
+        // Never block the game: if we exhausted the ceiling without a connected
+        // layout, log loudly and ship the last one anyway.
+        if (!connected)
+        {
+            UnityEngine.Debug.LogWarning($"[DungeonGenerator] CONNECTIVITY FAILED — no fully-connected layout after " +
+                $"{maxOuterAttempts} outer attempts on floor {nextFloor} (last seed {currentSeed}). " +
+                $"Shipping the last (disconnected) layout rather than hanging the game.");
+        }
+
+        lastGenAttempts = innerAttempts;
+        lastConnectivityRetries = outerAttempts;
+        lastConnected = connected;
+        lastGenTimeMicros = sw.ElapsedTicks * 1000000L / Stopwatch.Frequency;
 
         // Player always spawns in the smallest room on the floor — computed here, once,
         // so PlayerController and EnemySpawner both read the same room via PlayerSpawnRoom
@@ -197,19 +263,6 @@ public class DungeonGenerator : MonoBehaviour
             if (r.width * r.height < smallest.width * smallest.height)
                 smallest = r;
         playerSpawnRoom = smallest;
-
-        // stage 1 - BSP only
-        int[,] gridBSP = CopyGrid(grid);
-
-        // stage 2 - random walk corridors on top of BSP
-        ConnectAllRooms(root);
-        int[,] gridRW = CopyGrid(grid);
-
-        // stage 3 - CA smoothing on top of RW
-        ApplyCellularAutomata(caIterations);
-        int[,] gridCA = CopyGrid(grid);
-
-        sw.Stop();
 
         // Render each stage only if its tilemap is assigned in the Inspector.
         // Gameplay builds: assign only tilemapCA, leave tilemapBSP/tilemapRW empty.
@@ -236,9 +289,6 @@ public class DungeonGenerator : MonoBehaviour
             for (int y = 0; y < gridHeight; y++)
                 if (grid[x, y] == 0) floorCount++;
 
-        bool connected = CheckConnectivity();
-        lastConnected = connected;
-        lastGenTimeMicros = sw.ElapsedTicks * 1000000L / Stopwatch.Frequency;
         runCounter++;
         currentFloor = nextFloor;
 
@@ -253,7 +303,7 @@ public class DungeonGenerator : MonoBehaviour
             seed = currentSeed,
             roomCount = rooms.Count,
             floorTiles = floorCount,
-            generationTime = sw.ElapsedTicks * 1000000L / Stopwatch.Frequency,
+            generationTime = lastGenTimeMicros,
             allConnected = connected
         };
 
@@ -267,10 +317,11 @@ public class DungeonGenerator : MonoBehaviour
             metricsText.text =
                 $"Floor: {currentFloor}\n" +
                 $"Seed: {currentSeed}\n" +
-                $"Generation Time: {sw.ElapsedTicks * 1000000L / Stopwatch.Frequency}μs\n" +
+                $"Generation Time: {lastGenTimeMicros}μs\n" +
                 $"Rooms: {rooms.Count}\n" +
                 $"Floor Tiles: {floorCount}\n" +
                 $"All Connected: {connected}\n" +
+                $"Connectivity Retries: {outerAttempts}\n" +
                 $"Total Runs Logged: {logs.Count}";
         }
 
@@ -288,6 +339,7 @@ public class DungeonGenerator : MonoBehaviour
 
     void WriteLog()
     {
+#if !UNITY_WEBGL
         using (StreamWriter writer = new StreamWriter(logPath, false))
         {
             writer.WriteLine("--- DUNGEON GENERATION LOG ---");
@@ -335,6 +387,7 @@ public class DungeonGenerator : MonoBehaviour
             writer.WriteLine($"Time (μs)   — Min: {minTime} | Max: {maxTime} | Avg: {avgTime:F1}");
             writer.WriteLine($"Connectivity — {connectedCount}/{logs.Count} runs fully connected ({(float)connectedCount / logs.Count * 100:F1}%)");
         }
+#endif
     }
 
     void SplitNode(BSPNode node)
