@@ -6,6 +6,8 @@ public class PlayerController : MonoBehaviour
 {
     [Header("References")]
     public DungeonGenerator dungeon;
+    [Tooltip("Optional — if assigned, the exit stays locked until the floor's key is collected.")]
+    public KeyManager keyManager;
 
     [Header("Movement")]
     public float moveSpeed = 5f;
@@ -198,7 +200,16 @@ public class PlayerController : MonoBehaviour
         Vector3 exitWorldPos = dungeon.tilemapCA.transform.position + new Vector3(center.x, center.y, 0f);
 
         if (Vector3.Distance(transform.position, exitWorldPos) <= exitTriggerRadius)
+        {
+            // Exit is locked until this floor's key is collected. If no KeyManager is
+            // wired up, behave exactly as before (always open).
+            if (keyManager != null && !keyManager.HasKey)
+            {
+                keyManager.NotifyLockedExit();
+                return;
+            }
             dungeon.AdvanceToNextFloor();
+        }
     }
 
     void CheckPotionPickups()

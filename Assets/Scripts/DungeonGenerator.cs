@@ -52,7 +52,18 @@ public class DungeonGenerator : MonoBehaviour
     private long lastGenTimeMicros;
     private bool lastConnected;
     private int lastRoomCountMin, lastRoomCountMax;
-    private int lastConnectivityRetries;
+    private int lastConnectivityAttempts;
+
+    // Room adjacency graph derived from the finished grid (see RoomGraph), rebuilt
+    // each Generate() after spawn/exit are known. Rooms are referenced by their index
+    // in the rooms list throughout — this stores no geometry of its own.
+    private RoomGraph roomGraph;
+    private int spawnRoomIndex = -1;
+    private int exitRoomIndex = -1;
+    private int keyRoomIndex = -1;
+    private int lastRoomsOnCriticalPath;
+    private int lastRoomsOffPath;
+    private int lastKeyRoomDistance = -1;
 
     // --- Public accessors for EnemyAI / Pathfinding / EnemySpawner ---
     public int[,] Grid => grid;
@@ -82,9 +93,25 @@ public class DungeonGenerator : MonoBehaviour
     public int LastRoomCountMax => lastRoomCountMax;
 
     // Number of full-pipeline outer attempts the last Generate() call needed to
-    // produce a fully-connected floor (1 = connected on the first try). Equals the
-    // ceiling if it gave up; surfaced so DifficultyTestHarness can log it.
-    public int LastConnectivityRetries => lastConnectivityRetries;
+    // produce a fully-connected floor (1 = connected on the first try, i.e. zero
+    // retries). Equals the ceiling if it gave up; surfaced so DifficultyTestHarness
+    // can log it. NOTE: this is an ATTEMPT count, not a retry count.
+    public int LastConnectivityAttempts => lastConnectivityAttempts;
+
+    // Room adjacency graph for the current floor, and the room indices key systems
+    // read from it. Indices are into Rooms; -1 means "not determined this floor".
+    public RoomGraph RoomGraph => roomGraph;
+    public int PlayerSpawnRoomIndex => spawnRoomIndex;
+    public int ExitRoomIndex => exitRoomIndex;
+
+    // The room the floor's key spawns in — chosen off the critical path, deepest from
+    // spawn, biased toward dead ends. -1 if no valid key room exists (degenerate floor).
+    public int KeyRoomIndex => keyRoomIndex;
+
+    // Graph metrics for the last floor, surfaced for DifficultyTestHarness.
+    public int LastRoomsOnCriticalPath => lastRoomsOnCriticalPath;
+    public int LastRoomsOffPath => lastRoomsOffPath;
+    public int LastKeyRoomDistance => lastKeyRoomDistance;
 
     // Re-runs the same generation Space already triggers, but callable from other
     // scripts (e.g. PlayerController when the player reaches ExitRoom).
@@ -251,18 +278,19 @@ public class DungeonGenerator : MonoBehaviour
         }
 
         lastGenAttempts = innerAttempts;
-        lastConnectivityRetries = outerAttempts;
+        lastConnectivityAttempts = outerAttempts;
         lastConnected = connected;
         lastGenTimeMicros = sw.ElapsedTicks * 1000000L / Stopwatch.Frequency;
 
         // Player always spawns in the smallest room on the floor — computed here, once,
         // so PlayerController and EnemySpawner both read the same room via PlayerSpawnRoom
         // regardless of which order they handle OnFloorGenerated in.
-        RectInt smallest = rooms[0];
-        foreach (var r in rooms)
-            if (r.width * r.height < smallest.width * smallest.height)
-                smallest = r;
-        playerSpawnRoom = smallest;
+        int smallestIdx = 0;
+        for (int i = 1; i < rooms.Count; i++)
+            if (rooms[i].width * rooms[i].height < rooms[smallestIdx].width * rooms[smallestIdx].height)
+                smallestIdx = i;
+        spawnRoomIndex = smallestIdx;
+        playerSpawnRoom = rooms[smallestIdx];
 
         // Render each stage only if its tilemap is assigned in the Inspector.
         // Gameplay builds: assign only tilemapCA, leave tilemapBSP/tilemapRW empty.
@@ -296,6 +324,23 @@ public class DungeonGenerator : MonoBehaviour
         // the player's spawn room, found via BFS over the final grid (same technique
         // as CheckConnectivity, just tracking distance instead of a visited flag).
         exitRoom = FindFarthestRoom(playerSpawnRoom);
+        exitRoomIndex = rooms.IndexOf(exitRoom);
+
+        // Build the room adjacency graph from the FINISHED grid, then choose this
+        // floor's key room and record graph metrics. Done before OnFloorGenerated
+        // fires so KeyManager/PotionSpawner can read RoomGraph and KeyRoomIndex.
+        roomGraph = new RoomGraph(grid, gridWidth, gridHeight, rooms, spawnRoomIndex, exitRoomIndex);
+        keyRoomIndex = SelectKeyRoom(out bool keyFallback);
+        lastRoomsOnCriticalPath = roomGraph.CriticalPath.Count;
+        lastRoomsOffPath = rooms.Count - lastRoomsOnCriticalPath;
+        lastKeyRoomDistance = keyRoomIndex >= 0 ? roomGraph.DistanceFromSpawn(keyRoomIndex) : -1;
+
+        if (keyRoomIndex < 0)
+            UnityEngine.Debug.LogWarning($"[DungeonGenerator] No valid key room on floor {nextFloor} " +
+                $"(rooms={rooms.Count}, offPath={lastRoomsOffPath}); floor ships without a key/lock.");
+        else if (keyFallback)
+            UnityEngine.Debug.LogWarning($"[DungeonGenerator] Key-room fallback on floor {nextFloor}: no off-path " +
+                $"rooms, key placed in deepest non-exit room (index {keyRoomIndex}, dist {lastKeyRoomDistance}).");
 
         GenerationLog entry = new GenerationLog
         {
@@ -321,7 +366,8 @@ public class DungeonGenerator : MonoBehaviour
                 $"Rooms: {rooms.Count}\n" +
                 $"Floor Tiles: {floorCount}\n" +
                 $"All Connected: {connected}\n" +
-                $"Connectivity Retries: {outerAttempts}\n" +
+                $"Connectivity Attempts: {outerAttempts}\n" +
+                $"Off-path Rooms: {lastRoomsOffPath}/{rooms.Count}\n" +
                 $"Total Runs Logged: {logs.Count}";
         }
 
@@ -668,6 +714,42 @@ public class DungeonGenerator : MonoBehaviour
         }
 
         return farthest;
+    }
+
+    // Picks the floor's key room from the room graph: among rooms NOT on the critical
+    // path, the one farthest from spawn, tie-broken toward dead ends (lowest degree).
+    // If every room is on the critical path, falls back to the deepest room that is
+    // neither spawn nor exit and reports it via fallbackUsed. Returns -1 only when no
+    // room qualifies at all (e.g. a floor of just the spawn and exit rooms).
+    int SelectKeyRoom(out bool fallbackUsed)
+    {
+        fallbackUsed = false;
+        if (roomGraph == null) return -1;
+
+        int best = -1, bestDist = -1, bestDegree = int.MaxValue;
+        for (int i = 0; i < rooms.Count; i++)
+        {
+            if (roomGraph.IsOnCriticalPath(i)) continue;
+            int d = roomGraph.DistanceFromSpawn(i);
+            if (d < 0) continue; // unreachable — shouldn't happen once connectivity is enforced
+            int deg = roomGraph.Degree(i);
+            if (d > bestDist || (d == bestDist && deg < bestDegree))
+            {
+                best = i; bestDist = d; bestDegree = deg;
+            }
+        }
+        if (best != -1) return best;
+
+        // Fallback: no off-path rooms exist. Deepest room that isn't spawn or exit.
+        fallbackUsed = true;
+        for (int i = 0; i < rooms.Count; i++)
+        {
+            if (i == spawnRoomIndex || i == exitRoomIndex) continue;
+            int d = roomGraph.DistanceFromSpawn(i);
+            if (d < 0) continue;
+            if (d > bestDist) { best = i; bestDist = d; }
+        }
+        return best;
     }
 }
 

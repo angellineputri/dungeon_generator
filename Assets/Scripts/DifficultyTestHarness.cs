@@ -49,11 +49,12 @@ public class DifficultyTestHarness : MonoBehaviour
         public int floor, rooms, roomTargetMin, roomTargetMax, genAttempts;
         public long genTimeMicros;
         public bool connected;
-        public int connectivityRetries;
+        public int connectivityAttempts;
         public int enemyBudget, enemiesActual, potionBudget, potionsActual;
         public float hpMultiplier, damageMultiplier;
         public int minRoomSize, caIterations, minNodeSize;
         public float spawnInterval;
+        public int roomsOnCriticalPath, roomsOffPath, keyRoomDistance;
     }
 
     void Update()
@@ -82,7 +83,8 @@ public class DifficultyTestHarness : MonoBehaviour
         StreamWriter csv = new StreamWriter(csvPath, false);
         csv.WriteLine("Floor,Rooms,RoomTargetMin,RoomTargetMax,GenAttempts,GenTimeMicros,Connected," +
                       "EnemyBudget,EnemiesActual,PotionBudget,PotionsActual," +
-                      "HPMultiplier,DamageMultiplier,MinRoomSize,CAIterations,MinNodeSize,SpawnInterval,ConnectivityRetries");
+                      "HPMultiplier,DamageMultiplier,MinRoomSize,CAIterations,MinNodeSize,SpawnInterval,ConnectivityAttempts," +
+                      "RoomsOnCriticalPath,RoomsOffPath,KeyRoomDistance");
         try
         {
 #endif
@@ -109,7 +111,7 @@ public class DifficultyTestHarness : MonoBehaviour
                     genAttempts = dungeon.LastGenAttempts,
                     genTimeMicros = dungeon.LastGenTimeMicros,
                     connected = dungeon.LastConnected,
-                    connectivityRetries = dungeon.LastConnectivityRetries,
+                    connectivityAttempts = dungeon.LastConnectivityAttempts,
                     enemyBudget = diff.enemyCount,
                     enemiesActual = actualEnemies,
                     potionBudget = diff.potionCount,
@@ -119,7 +121,10 @@ public class DifficultyTestHarness : MonoBehaviour
                     minRoomSize = diff.minRoomSize,
                     caIterations = diff.caIterations,
                     minNodeSize = diff.minNodeSize,
-                    spawnInterval = diff.spawnInterval
+                    spawnInterval = diff.spawnInterval,
+                    roomsOnCriticalPath = dungeon.LastRoomsOnCriticalPath,
+                    roomsOffPath = dungeon.LastRoomsOffPath,
+                    keyRoomDistance = dungeon.LastKeyRoomDistance
                 };
                 results.Add(r);
 
@@ -129,7 +134,7 @@ public class DifficultyTestHarness : MonoBehaviour
                     r.connected, r.enemyBudget, r.enemiesActual, r.potionBudget, r.potionsActual,
                     r.hpMultiplier.ToString("F2"), r.damageMultiplier.ToString("F2"),
                     r.minRoomSize, r.caIterations, r.minNodeSize, r.spawnInterval.ToString("F1"),
-                    r.connectivityRetries
+                    r.connectivityAttempts, r.roomsOnCriticalPath, r.roomsOffPath, r.keyRoomDistance
                 ));
 #endif
 
@@ -139,6 +144,16 @@ public class DifficultyTestHarness : MonoBehaviour
                     Debug.LogWarning($"[DifficultyTestHarness] Floor {floor} was NOT fully connected — this should never happen.");
                 if (System.Math.Abs(r.enemiesActual - r.enemyBudget) > r.enemyBudget / 2)
                     Debug.LogWarning($"[DifficultyTestHarness] Floor {floor}: enemy budget was {r.enemyBudget} but only {r.enemiesActual} actually spawned — rooms may be running out.");
+
+                // Key-and-lock invariants: the key room must exist, be reachable, and
+                // never be the spawn or exit room.
+                int keyIdx = dungeon.KeyRoomIndex;
+                if (keyIdx < 0)
+                    Debug.LogWarning($"[DifficultyTestHarness] Floor {floor}: no key room placed (off-path={r.roomsOffPath}).");
+                else if (keyIdx == dungeon.PlayerSpawnRoomIndex || keyIdx == dungeon.ExitRoomIndex)
+                    Debug.LogWarning($"[DifficultyTestHarness] Floor {floor}: key room {keyIdx} collides with spawn/exit — INVARIANT VIOLATED.");
+                else if (dungeon.RoomGraph != null && dungeon.RoomGraph.DistanceFromSpawn(keyIdx) < 0)
+                    Debug.LogWarning($"[DifficultyTestHarness] Floor {floor}: key room {keyIdx} is unreachable from spawn — INVARIANT VIOLATED.");
 
                 yield return null;
             }
@@ -239,6 +254,16 @@ public class DifficultyTestHarness : MonoBehaviour
 
         int mismatchCount = results.Count(r => System.Math.Abs(r.enemiesActual - r.enemyBudget) > r.enemyBudget / 2);
         sb.AppendLine($"Enemy spawn mismatches (>50% under budget): {mismatchCount}/{results.Count} floors");
+
+        sb.AppendLine();
+        int offPathZeroOrOne = results.Count(r => r.roomsOffPath <= 1);
+        sb.AppendLine($"Rooms off critical path: min {results.Min(r => r.roomsOffPath)}, " +
+                       $"max {results.Max(r => r.roomsOffPath)}, avg {results.Average(r => r.roomsOffPath):F1}");
+        sb.AppendLine($"Floors with <=1 off-path room: {offPathZeroOrOne}/{results.Count} " +
+                       $"({(100.0 * offPathZeroOrOne / results.Count):F0}%). If this is high, layouts are near-linear " +
+                       $"and the key-and-lock exploration premise needs rethinking.");
+        sb.AppendLine($"Key room distance from spawn: min {results.Min(r => r.keyRoomDistance)}, " +
+                       $"max {results.Max(r => r.keyRoomDistance)}, avg {results.Average(r => r.keyRoomDistance):F1}");
 
 #if !UNITY_WEBGL
         File.WriteAllText(path, sb.ToString());

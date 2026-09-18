@@ -40,20 +40,37 @@ public class PotionSpawner : MonoBehaviour
         List<RectInt> rooms = dungeon.Rooms;
         if (rooms == null || rooms.Count == 0) return;
 
-        RectInt playerRoom = dungeon.PlayerSpawnRoom;
-        List<RectInt> eligible = new List<RectInt>();
-        foreach (var room in rooms)
+        RoomGraph graph = dungeon.RoomGraph;
+        int spawnIdx = dungeon.PlayerSpawnRoomIndex;
+
+        // Weight each eligible room (everything except the player's spawn room) toward
+        // off-critical-path rooms and toward greater distance from spawn, so potions
+        // reward stepping off the main route rather than sitting on it. If the graph
+        // isn't available, every eligible room gets equal weight (old behaviour).
+        List<int> eligible = new List<int>();
+        List<float> weights = new List<float>();
+        float totalWeight = 0f;
+        for (int i = 0; i < rooms.Count; i++)
         {
-            bool isPlayerRoom = room.x == playerRoom.x && room.y == playerRoom.y
-                && room.width == playerRoom.width && room.height == playerRoom.height;
-            if (!isPlayerRoom)
-                eligible.Add(room);
+            if (i == spawnIdx) continue;
+
+            float w = 1f;
+            if (graph != null)
+            {
+                int d = Mathf.Max(0, graph.DistanceFromSpawn(i));
+                float offPathBoost = graph.IsOnCriticalPath(i) ? 1f : 3f;
+                w = offPathBoost * (1 + d);
+            }
+
+            eligible.Add(i);
+            weights.Add(w);
+            totalWeight += w;
         }
         if (eligible.Count == 0) return;
 
         for (int i = 0; i < count; i++)
         {
-            RectInt room = eligible[Random.Range(0, eligible.Count)];
+            RectInt room = rooms[PickWeighted(eligible, weights, totalWeight)];
             Vector2Int pos = new Vector2Int(
                 Random.Range(room.x, room.x + room.width),
                 Random.Range(room.y, room.y + room.height)
@@ -64,5 +81,21 @@ public class PotionSpawner : MonoBehaviour
             potionObj.transform.position = dungeon.tilemapCA.transform.position + new Vector3(pos.x, pos.y, -0.1f);
             activePotions.Add(potionObj);
         }
+    }
+
+    // Weighted random room-index pick; uniform fallback if weights are degenerate.
+    int PickWeighted(List<int> indices, List<float> weights, float totalWeight)
+    {
+        if (totalWeight <= 0f)
+            return indices[Random.Range(0, indices.Count)];
+
+        float r = Random.value * totalWeight;
+        float acc = 0f;
+        for (int i = 0; i < indices.Count; i++)
+        {
+            acc += weights[i];
+            if (r <= acc) return indices[i];
+        }
+        return indices[indices.Count - 1];
     }
 }
