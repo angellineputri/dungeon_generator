@@ -52,11 +52,19 @@ public static class DifficultyManager
     private const int CA_STEP_EVERY = 4;
 
     // Controls BSP split depth (room COUNT), separate from minRoomSize (room
-    // dimensions). BASE was 28, but the report documents 22 as the value that
-    // reliably produces 6-10 rooms — corrected to match the report's already
-    // validated value.
-    private const int BASE_MIN_NODE_SIZE = 22;
-    private const int MIN_NODE_SIZE_FLOOR = 14;         // shifted down proportionally from the old 28->18 spread
+    // dimensions). BASE lowered 26 -> 24: at 26 floor 1 naturally produced only 4
+    // rooms, which could never satisfy the roomCountMin=5 gate, so floors 1-2
+    // thrashed to the 100-attempt retry ceiling AND shipped with 0-1 off-path rooms
+    // (key fell on the critical path). 24 is measured to yield ~7 rooms with 2
+    // off-path on floor 1, clearing the gate and giving real exploration on the
+    // floors testers see first. STEP_EVERY raised 2 -> 3 so the descent reaches
+    // MIN_NODE_SIZE_FLOOR (14) at floor 16 instead of 13, extending the range over
+    // which structural difficulty scaling operates. This schedule is deliberately
+    // paired with DungeonGenerator's roomCountMin base (5): a desync between the
+    // node-size schedule and the room-count target previously drove floors into
+    // the retry ceiling.
+    private const int BASE_MIN_NODE_SIZE = 24;
+    private const int MIN_NODE_SIZE_FLOOR = 14;         // reached at ~floor 16 with STEP_EVERY = 3
     private const int NODE_SIZE_STEP_EVERY = 3;
 
     // Potions get scarcer as floors get harder, per the original design (limited

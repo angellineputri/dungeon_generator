@@ -53,6 +53,12 @@ public class DungeonGenerator : MonoBehaviour
     private bool lastConnected;
     private int lastRoomCountMin, lastRoomCountMax;
     private int lastConnectivityAttempts;
+    private int lastBranchingRejections;
+
+    // Minimum off-critical-path (optional) rooms a layout must have to be accepted.
+    // Guarantees every floor has somewhere optional to go — a generation invariant,
+    // not an emergent property of the seed.
+    private const int MIN_OFF_PATH_ROOMS = 2;
 
     // Room adjacency graph derived from the finished grid (see RoomGraph), rebuilt
     // each Generate() after spawn/exit are known. Rooms are referenced by their index
@@ -97,6 +103,13 @@ public class DungeonGenerator : MonoBehaviour
     // retries). Equals the ceiling if it gave up; surfaced so DifficultyTestHarness
     // can log it. NOTE: this is an ATTEMPT count, not a retry count.
     public int LastConnectivityAttempts => lastConnectivityAttempts;
+
+    // How many otherwise-connected layouts the last Generate() call threw away for
+    // having fewer than MIN_OFF_PATH_ROOMS off-critical-path rooms (i.e. no optional
+    // space to explore). Logged separately from LastConnectivityAttempts so the two
+    // rejection reasons stay distinguishable in the CSV. 0 = accepted on branching
+    // the first time it was connected.
+    public int LastBranchingRejections => lastBranchingRejections;
 
     // Room adjacency graph for the current floor, and the room indices key systems
     // read from it. Indices are into Rooms; -1 means "not determined this floor".
@@ -194,7 +207,7 @@ public class DungeonGenerator : MonoBehaviour
         // comfortably ahead of every minNodeSize step-down, with headroom to 18
         // to absorb occasional high-outlier seeds rather than needing an exact
         // ceiling match.
-        int roomCountMin = Mathf.Min(16, 6 + (nextFloor - 1) / 3);
+        int roomCountMin = Mathf.Min(16, 5 + (nextFloor - 1) / 3); // base 5, resynced with BASE_MIN_NODE_SIZE 24 (floor 1 yields ~7 rooms, clears gate)
         int roomCountMax = Mathf.Min(18, 10 + (nextFloor - 1));
         roomCountMin = Mathf.Min(roomCountMin, roomCountMax); // safety: min can never exceed max
         lastRoomCountMin = roomCountMin;
@@ -209,7 +222,9 @@ public class DungeonGenerator : MonoBehaviour
         const int maxOuterAttempts = 25;
         int outerAttempts = 0;
         int innerAttempts = 0;
+        int branchingRejections = 0;
         bool connected = false;
+        bool branchingOk = false;
         BSPNode root = null;
         int[,] gridBSP = null, gridRW = null, gridCA = null;
 
@@ -263,8 +278,21 @@ public class DungeonGenerator : MonoBehaviour
             // layout away and start a fresh outer attempt rather than shipping a
             // floor with unreachable rooms.
             connected = CheckConnectivity();
+
+            // Second acceptance gate: reject an otherwise-connected layout that has
+            // no optional space to explore. A straight chain of rooms (every room on
+            // the critical path) makes the key-placement fallback fire and puts the
+            // key directly on the route to the exit — which defeats the exploration
+            // premise on exactly the low floors seed luck tends to produce it. Same
+            // ceiling / ship-anyway behaviour as the connectivity gate: never hang.
+            branchingOk = false;
+            if (connected)
+            {
+                branchingOk = CountOffPathRooms() >= MIN_OFF_PATH_ROOMS;
+                if (!branchingOk) branchingRejections++;
+            }
         }
-        while (!connected && outerAttempts < maxOuterAttempts);
+        while ((!connected || !branchingOk) && outerAttempts < maxOuterAttempts);
 
         sw.Stop();
 
@@ -276,9 +304,16 @@ public class DungeonGenerator : MonoBehaviour
                 $"{maxOuterAttempts} outer attempts on floor {nextFloor} (last seed {currentSeed}). " +
                 $"Shipping the last (disconnected) layout rather than hanging the game.");
         }
+        else if (!branchingOk)
+        {
+            UnityEngine.Debug.LogWarning($"[DungeonGenerator] BRANCHING FAILED — no connected layout with at least " +
+                $"{MIN_OFF_PATH_ROOMS} off-critical-path rooms after {maxOuterAttempts} outer attempts on floor " +
+                $"{nextFloor} (last seed {currentSeed}). Shipping the last (near-linear) layout rather than hanging the game.");
+        }
 
         lastGenAttempts = innerAttempts;
         lastConnectivityAttempts = outerAttempts;
+        lastBranchingRejections = branchingRejections;
         lastConnected = connected;
         lastGenTimeMicros = sw.ElapsedTicks * 1000000L / Stopwatch.Frequency;
 
@@ -660,6 +695,25 @@ public class DungeonGenerator : MonoBehaviour
     // BFS distance flood-fill from the centre of startRoom, then returns whichever
     // room's centre has the largest distance. Same traversal pattern as
     // CheckConnectivity, but records a distance per tile instead of just visited/not.
+    // Off-path (optional) room count for the CURRENT grid/rooms, used as the branching
+    // acceptance gate inside the generation loop. Deliberately mirrors the post-loop
+    // spawn/exit/graph computation exactly — smallest room = spawn, farthest = exit —
+    // so the gate's decision and the shipped RoomsOffPath metric can never disagree.
+    int CountOffPathRooms()
+    {
+        if (rooms.Count == 0) return 0;
+
+        int smallest = 0;
+        for (int i = 1; i < rooms.Count; i++)
+            if (rooms[i].width * rooms[i].height < rooms[smallest].width * rooms[smallest].height)
+                smallest = i;
+
+        RectInt exit = FindFarthestRoom(rooms[smallest]);
+        int exitIdx = rooms.IndexOf(exit);
+        RoomGraph g = new RoomGraph(grid, gridWidth, gridHeight, rooms, smallest, exitIdx);
+        return rooms.Count - g.CriticalPath.Count;
+    }
+
     RectInt FindFarthestRoom(RectInt startRoom)
     {
         Vector2Int start = new Vector2Int(

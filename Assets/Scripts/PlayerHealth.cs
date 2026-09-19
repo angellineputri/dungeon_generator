@@ -61,6 +61,16 @@ public class PlayerHealth : MonoBehaviour
         UpdateText();
     }
 
+    // Permanent upgrade: raises the maximum health bar WITHOUT changing currentHealth.
+    // Intentionally does not heal — a bigger bar, not a refill — so that (a) potions
+    // stay meaningful and (b) SessionTelemetry, which infers heals from positive
+    // currentHealth deltas, never mistakes an upgrade for an EffectiveHeal.
+    public void IncreaseMaxHealth(float amount)
+    {
+        maxHealth += amount;
+        UpdateText();
+    }
+
     void UpdateText()
     {
         if (healthText != null)
