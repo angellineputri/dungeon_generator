@@ -11,7 +11,11 @@ public class PlayerController : MonoBehaviour
 
     [Header("Movement")]
     public float moveSpeed = 5f;
-    public float collisionRadius = 0.3f;
+    public float collisionRadius = 0.2f;
+    [Tooltip("Shifts wall-collision sampling vertically (world units). Positive nudges the player's resting position UP against walls — shrinks the gap when hitting a wall above and transfers overlap from the bottom to the top. Tune by eye in Play mode. Collision only; does not move the sprite.")]
+    public float collisionYShift = 0.7f;
+    [Tooltip("Shifts wall-collision sampling horizontally (world units). Mirror of collisionYShift for left/right — positive nudges the player's resting position one way against side walls. Default 0; fill in by eye in Play mode. Collision only; does not move the sprite.")]
+    public float collisionXShift = 0f;
 
     [Header("Exit Trigger")]
     [Tooltip("How close (in tiles) the player must be to the exit marker's exact position to advance, rather than anywhere in the exit room.")]
@@ -117,6 +121,11 @@ public class PlayerController : MonoBehaviour
     // used everywhere else in this project (potion pickup, exit trigger, contact damage).
     // Costs mana; fizzles with no damage (but cooldown still applies) if you're dry —
     // that's the actual point, since it's what stops holding F from being free forever.
+    // Fires only when an attack actually goes through (cooldown ready AND mana paid),
+    // so PlayerDirectionalAnimator plays the swing on real attacks and not on a dry
+    // fizzle. Subscribed to drive the attack animation without re-reading input.
+    public event System.Action OnAttack;
+
     void Attack()
     {
         PlayerMana mana = GetComponent<PlayerMana>();
@@ -125,6 +134,8 @@ public class PlayerController : MonoBehaviour
             ShowAttackEffect(false, outOfMana: true);
             return;
         }
+
+        OnAttack?.Invoke();
 
         EnemyAI[] enemies = FindObjectsByType<EnemyAI>(FindObjectsSortMode.None);
         bool hitAnything = false;
@@ -225,6 +236,8 @@ public class PlayerController : MonoBehaviour
     bool IsPositionWalkable(Vector3 worldPos)
     {
         Vector3 local = worldPos - dungeon.tilemapCA.transform.position;
+        local.x -= collisionXShift; // rebalance horizontal gap/overlap against walls
+        local.y -= collisionYShift; // rebalance vertical gap/overlap against walls
 
         Vector2[] checkOffsets =
         {
@@ -232,7 +245,13 @@ public class PlayerController : MonoBehaviour
             new Vector2(collisionRadius, 0),
             new Vector2(-collisionRadius, 0),
             new Vector2(0, collisionRadius),
-            new Vector2(0, -collisionRadius)
+            new Vector2(0, -collisionRadius),
+            // Diagonal corners — without these, the player slips through wall
+            // corners and thin 1-cell nubs on diagonal approaches.
+            new Vector2(collisionRadius, collisionRadius),
+            new Vector2(-collisionRadius, collisionRadius),
+            new Vector2(collisionRadius, -collisionRadius),
+            new Vector2(-collisionRadius, -collisionRadius)
         };
 
         foreach (var offset in checkOffsets)

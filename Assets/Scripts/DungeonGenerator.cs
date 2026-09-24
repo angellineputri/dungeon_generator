@@ -34,6 +34,10 @@ public class DungeonGenerator : MonoBehaviour
     public Tilemap tilemapCA;
     public TileBase floorTile;
     public TileBase wallTile;
+    [Tooltip("Optional, visual-only. Mostly-transparent strip sprite painted on borderOverlayTilemap (NOT ca) over wall cells that touch floor, rotated to face the floor side. ca's wall cells are never replaced. Leave empty to disable.")]
+    public TileBase borderTile;
+    [Tooltip("Optional overlay Tilemap above ca (below fog), NO collider. Painted with the directional border strip; ca's wall cells underneath are never replaced. Leave empty to disable.")]
+    public Tilemap borderOverlayTilemap;
 
     [Header("UI")]
     public TextMeshProUGUI metricsText;
@@ -60,6 +64,18 @@ public class DungeonGenerator : MonoBehaviour
     // not an emergent property of the seed.
     private const int MIN_OFF_PATH_ROOMS = 2;
 
+    // The active floor's BSP topology (see LayoutProfile), chosen once per floor and
+    // read by SplitNode on every attempt so the "kind" of floor is stable while the
+    // seed varies. lastLayoutProfile is the same value, surfaced for the CSV harness.
+    private LayoutProfile currentProfile;
+    private LayoutProfile lastLayoutProfile;
+
+    // How many of a node's top splits Rows/Columns force in their signature direction
+    // before deeper splits revert to aspect-biased random. Forcing only the top levels
+    // keeps the banded/striped SHAPE while letting bands subdivide, so even Rows still
+    // produces off-path rooms and clears the branching gate.
+    private const int FORCED_SPLIT_DEPTH = 2;
+
     // Room adjacency graph derived from the finished grid (see RoomGraph), rebuilt
     // each Generate() after spawn/exit are known. Rooms are referenced by their index
     // in the rooms list throughout — this stores no geometry of its own.
@@ -77,6 +93,10 @@ public class DungeonGenerator : MonoBehaviour
     public int GridHeight => gridHeight;
     public List<RectInt> Rooms => rooms;
     public int CurrentFloor => currentFloor;
+
+    // The seed of the layout currently on screen. Read by DecorationLayer so decoration
+    // reproduces with the layout; must be sampled after Generate() has run.
+    public int CurrentSeed => currentSeed;
 
     // The room the player spawns in — always the smallest room on the floor, treated
     // as a safe starting room. Computed once per Generate() call so PlayerController
@@ -125,6 +145,9 @@ public class DungeonGenerator : MonoBehaviour
     public int LastRoomsOnCriticalPath => lastRoomsOnCriticalPath;
     public int LastRoomsOffPath => lastRoomsOffPath;
     public int LastKeyRoomDistance => lastKeyRoomDistance;
+
+    // The BSP topology chosen for the last floor, surfaced for DifficultyTestHarness.
+    public LayoutProfile LastLayoutProfile => lastLayoutProfile;
 
     // Re-runs the same generation Space already triggers, but callable from other
     // scripts (e.g. PlayerController when the player reaches ExitRoom).
@@ -212,6 +235,13 @@ public class DungeonGenerator : MonoBehaviour
         roomCountMin = Mathf.Min(roomCountMin, roomCountMax); // safety: min can never exceed max
         lastRoomCountMin = roomCountMin;
         lastRoomCountMax = roomCountMax;
+
+        // Pick this floor's BSP topology once, before the attempt loop, so every retry
+        // regenerates the SAME kind of floor with a fresh seed (the profile is the
+        // floor's identity; the seed is the variation within it). Deterministic in the
+        // floor number, so a given floor is reliably the same kind across harness runs.
+        currentProfile = ChooseLayoutProfile(nextFloor);
+        lastLayoutProfile = currentProfile;
 
         // Outer attempt loop: the ENTIRE pipeline (room-count loop -> corridors ->
         // CA -> connectivity check) is re-run from scratch until CheckConnectivity()
@@ -346,6 +376,40 @@ public class DungeonGenerator : MonoBehaviour
                 }
         }
 
+        // Visual-only directional border overlay on a SEPARATE tilemap above ca. Paints a
+        // mostly-transparent strip on each wall cell touching floor, rotated so the strip
+        // faces the floor side; ca's wall cells underneath stay plain wallTile — never
+        // replaced. Keyed off gridCA (the playable layout), painted once. Reads gridCA
+        // only — never writes it — and runs after generation is finalized, so it cannot
+        // affect grid, rooms, the room graph, or any metric the harness measures.
+        if (borderOverlayTilemap != null)
+        {
+            borderOverlayTilemap.ClearAllTiles();
+            if (borderTile != null)
+                for (int x = 0; x < gridWidth; x++)
+                    for (int y = 0; y < gridHeight; y++)
+                    {
+                        if (gridCA[x, y] == 0) continue; // wall cells only
+                        float angle;
+                        if      (IsFloor(gridCA, x, y + 1)) angle =   0f; // floor above → strip up
+                        else if (IsFloor(gridCA, x, y - 1)) angle = 180f; // floor below
+                        else if (IsFloor(gridCA, x - 1, y)) angle = -90f; // floor left
+                        else if (IsFloor(gridCA, x + 1, y)) angle =  90f; // floor right
+                        // Diagonal fallback: fills concave-notch cells that touch floor only
+                        // at a corner. No flush answer for a straight strip, so bias to the
+                        // vertical orientation matching the orthogonal priority above.
+                        else if (IsFloor(gridCA, x - 1, y + 1)) angle =   0f; // floor up-left
+                        else if (IsFloor(gridCA, x + 1, y + 1)) angle =   0f; // floor up-right
+                        else if (IsFloor(gridCA, x - 1, y - 1)) angle = 180f; // floor down-left
+                        else if (IsFloor(gridCA, x + 1, y - 1)) angle = 180f; // floor down-right
+                        else continue;                                    // no floor neighbor at all
+                        Vector3Int p = new Vector3Int(x, y, 0);
+                        borderOverlayTilemap.SetTile(p, borderTile);
+                        borderOverlayTilemap.SetTileFlags(p, TileFlags.None); // required for rotation
+                        borderOverlayTilemap.SetTransformMatrix(p, Matrix4x4.Rotate(Quaternion.Euler(0, 0, angle)));
+                    }
+        }
+
         // metrics
         int floorCount = 0;
         for (int x = 0; x < gridWidth; x++)
@@ -402,6 +466,7 @@ public class DungeonGenerator : MonoBehaviour
                 $"Floor Tiles: {floorCount}\n" +
                 $"All Connected: {connected}\n" +
                 $"Connectivity Attempts: {outerAttempts}\n" +
+                $"Layout Profile: {lastLayoutProfile}\n" +
                 $"Off-path Rooms: {lastRoomsOffPath}/{rooms.Count}\n" +
                 $"Total Runs Logged: {logs.Count}";
         }
@@ -471,40 +536,101 @@ public class DungeonGenerator : MonoBehaviour
 #endif
     }
 
+    // Deterministic per-floor topology pick. Floors 1-3 draw only from {Quad, Organic}:
+    // Rows/Columns force the top splits one way, which on a small floor (~5-8 rooms) can
+    // collapse toward a near-linear chain and make the branching gate thrash. Keeping the
+    // banded profiles off the first floors testers see is the biasing mitigation — the gate
+    // is the backstop, not the first line of defence. Floors 4+ use all four.
+    LayoutProfile ChooseLayoutProfile(int floor)
+    {
+        if (floor <= 3)
+        {
+            LayoutProfile[] safe = { LayoutProfile.Quad, LayoutProfile.Organic };
+            return safe[Mathf.Abs(floor * 31 + 7) % safe.Length];
+        }
+
+        LayoutProfile[] all = { LayoutProfile.Rows, LayoutProfile.Columns, LayoutProfile.Quad, LayoutProfile.Organic };
+        return all[Mathf.Abs(floor * 31 + 7) % all.Length];
+    }
+
     void SplitNode(BSPNode node)
     {
         if (node.width < minNodeSize * 2 && node.height < minNodeSize * 2)
             return;
 
-        bool splitHorizontal = Random.value > 0.5f;
-        if (node.width > node.height * 1.5f)
-            splitHorizontal = false;
-        else if (node.height > node.width * 1.5f)
-            splitHorizontal = true;
+        bool splitHorizontal = DecideSplitHorizontal(node);
 
+        // Split ratio widened 0.4-0.6 -> 0.3-0.7 so children (and therefore rooms) are
+        // visibly uneven in size rather than near-halved every time.
         if (splitHorizontal)
         {
-            int split = Random.Range((int)(node.height * 0.4f), (int)(node.height * 0.6f));
-            node.left = new BSPNode(node.x, node.y, node.width, split);
-            node.right = new BSPNode(node.x, node.y + split, node.width, node.height - split);
+            int split = Random.Range((int)(node.height * 0.3f), (int)(node.height * 0.7f));
+            node.left = new BSPNode(node.x, node.y, node.width, split) { depth = node.depth + 1 };
+            node.right = new BSPNode(node.x, node.y + split, node.width, node.height - split) { depth = node.depth + 1 };
         }
         else
         {
-            int split = Random.Range((int)(node.width * 0.4f), (int)(node.width * 0.6f));
-            node.left = new BSPNode(node.x, node.y, split, node.height);
-            node.right = new BSPNode(node.x + split, node.y, node.width - split, node.height);
+            int split = Random.Range((int)(node.width * 0.3f), (int)(node.width * 0.7f));
+            node.left = new BSPNode(node.x, node.y, split, node.height) { depth = node.depth + 1 };
+            node.right = new BSPNode(node.x + split, node.y, node.width - split, node.height) { depth = node.depth + 1 };
         }
 
         SplitNode(node.left);
         SplitNode(node.right);
     }
 
+    // Chooses split direction (true = horizontal) for the active profile. A node is only
+    // split in a direction whose dimension is large enough to yield two carveable children;
+    // if the profile's preferred direction isn't viable, the only viable one is used so a
+    // forced profile never produces slivers. The SplitNode entry guard guarantees at least
+    // one direction is viable here.
+    bool DecideSplitHorizontal(BSPNode node)
+    {
+        bool canHorizontal = node.height >= minNodeSize * 2;
+        bool canVertical = node.width >= minNodeSize * 2;
+        if (canHorizontal && !canVertical) return true;
+        if (canVertical && !canHorizontal) return false;
+
+        switch (currentProfile)
+        {
+            case LayoutProfile.Rows:
+                // Stacked bands: force the top splits horizontal, then let bands subdivide.
+                return node.depth < FORCED_SPLIT_DEPTH ? true : AspectBiasedHorizontal(node);
+            case LayoutProfile.Columns:
+                // Tall strips: force the top splits vertical, then let strips subdivide.
+                return node.depth < FORCED_SPLIT_DEPTH ? false : AspectBiasedHorizontal(node);
+            case LayoutProfile.Quad:
+                // Strict alternation by depth -> grid-like cells.
+                return (node.depth % 2) == 0;
+            default: // Organic
+                return AspectBiasedHorizontal(node);
+        }
+    }
+
+    // Original behaviour: random direction with a 1.5x aspect bias so very elongated
+    // nodes split across their long axis.
+    bool AspectBiasedHorizontal(BSPNode node)
+    {
+        bool splitHorizontal = Random.value > 0.5f;
+        if (node.width > node.height * 1.5f)
+            splitHorizontal = false;
+        else if (node.height > node.width * 1.5f)
+            splitHorizontal = true;
+        return splitHorizontal;
+    }
+
     void CarveRooms(BSPNode node)
     {
         if (node.left == null && node.right == null)
         {
-            int roomW = Random.Range(minRoomSize, node.width - 2);
-            int roomH = Random.Range(minRoomSize, node.height - 2);
+            // Each room independently fills 55-100% of its leaf on each axis, so rooms are
+            // visibly asymmetric rather than near-uniform. Clamped to >= minRoomSize and to
+            // the leaf interior; Unity's int Random.Range returns min when min >= max, so a
+            // degenerate tiny leaf can't throw.
+            int maxW = Mathf.Max(minRoomSize, node.width - 2);
+            int maxH = Mathf.Max(minRoomSize, node.height - 2);
+            int roomW = Mathf.Clamp((int)(node.width * Random.Range(0.55f, 1.0f)), minRoomSize, maxW);
+            int roomH = Mathf.Clamp((int)(node.height * Random.Range(0.55f, 1.0f)), minRoomSize, maxH);
             int roomX = node.x + Random.Range(1, node.width - roomW - 1);
             int roomY = node.y + Random.Range(1, node.height - roomH - 1);
 
@@ -607,6 +733,14 @@ public class DungeonGenerator : MonoBehaviour
 
         ConnectAllRooms(node.left);
         ConnectAllRooms(node.right);
+    }
+
+    // True only if (x,y) is a real floor cell (grid value 0) inside the grid. Off-grid
+    // returns false so wall cells facing outside the map into nothing are not bordered.
+    bool IsFloor(int[,] g, int x, int y)
+    {
+        if (x < 0 || x >= gridWidth || y < 0 || y >= gridHeight) return false;
+        return g[x, y] == 0;
     }
 
     void ApplyCellularAutomata(int iterations)
@@ -810,6 +944,7 @@ public class DungeonGenerator : MonoBehaviour
 public class BSPNode
 {
     public int x, y, width, height;
+    public int depth;              // split depth from the root (root = 0); drives per-profile split direction
     public BSPNode left, right;
     public RectInt room;
 
@@ -821,3 +956,9 @@ public class BSPNode
         this.height = height;
     }
 }
+
+// Per-floor BSP topology. Chosen once per floor (see ChooseLayoutProfile) so floors
+// differ in KIND, not just in seed arrangement. Rows/Columns force the top splits one
+// way to produce banded/striped layouts; Quad alternates for a grid; Organic is the
+// original aspect-biased random.
+public enum LayoutProfile { Rows, Columns, Quad, Organic }

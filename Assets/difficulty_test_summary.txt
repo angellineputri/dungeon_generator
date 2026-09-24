@@ -5,29 +5,29 @@ Floors tested: 100 (Floor 1 to Floor 100)
 Sampled floors (every 10th, plus first and last):
 Floor  Rooms   Attempts  Connected  Enemies   Potions  HP x   Dmg x  
 ------------------------------------------------------------------------------
-1      7       8         Yes        3/3       3/3      1.00   1.00   
-10     14      1         Yes        15/15     1/1      2.35   1.90   
-20     16      1         Yes        43/43     1/1      3.85   2.90   
-30     16      1         Yes        53/53     1/1      5.35   3.90   
-40     16      1         Yes        63/63     1/1      6.85   4.90   
-50     16      1         Yes        73/73     1/1      8.35   5.90   
+1      9       1         Yes        3/3       3/3      1.00   1.00   
+10     12      1         Yes        15/15     1/1      2.35   1.90   
+20     18      5         Yes        43/43     1/1      3.85   2.90   
+30     18      1         Yes        53/53     1/1      5.35   3.90   
+40     17      2         Yes        63/63     1/1      6.85   4.90   
+50     18      1         Yes        73/73     1/1      8.35   5.90   
 60     18      1         Yes        83/83     1/1      9.85   6.90   
-70     16      1         Yes        90/90     1/1      11.35  7.90   
-80     17      2         Yes        90/90     1/1      12.85  8.90   
-90     16      2         Yes        90/90     1/1      14.35  9.90   
+70     16      2         Yes        90/90     1/1      11.35  7.90   
+80     18      4         Yes        90/90     1/1      12.85  8.90   
+90     17      3         Yes        90/90     1/1      14.35  9.90   
 100    16      1         Yes        90/90     1/1      15.85  10.90  
 
 ==============================================================================
 Summary across all floors:
 
 Connectivity: 100/100 floors fully connected (100%)
-Generation attempts: min 1, max 8, avg 1.3
-Generation time (µs): min 500, max 2168, avg 585.0
-Room count: min 6, max 18, avg 15.9
+Generation attempts: min 1, max 13, avg 2.5
+Generation time (µs): min 579, max 3453, avg 800.1
+Room count: min 8, max 18, avg 16.4
 Enemy count: floor 1 = 3, floor 100 = 90 (cap = 90)
 Enemy count plateau: WARNING — count stopped increasing from floor 68 onward.
-Enemy spawn mismatches (>50% under budget): 0/100 floors
+Enemy spawn mismatches (>50% under budget): 1/100 floors
 
-Rooms off critical path: min 2, max 12, avg 7.4
+Rooms off critical path: min 3, max 12, avg 8.2
 Floors with <=1 off-path room: 0/100 (0%). If this is high, layouts are near-linear and the key-and-lock exploration premise needs rethinking.
-Key room distance from spawn: min 2, max 9, avg 6.5
+Key room distance from spawn: min 2, max 9, avg 6.2

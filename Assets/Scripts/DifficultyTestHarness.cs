@@ -51,6 +51,7 @@ public class DifficultyTestHarness : MonoBehaviour
         public bool connected;
         public int connectivityAttempts;
         public int branchingRejections;
+        public string layoutProfile;
         public int enemyBudget, enemiesActual, potionBudget, potionsActual;
         public float hpMultiplier, damageMultiplier;
         public int minRoomSize, caIterations, minNodeSize;
@@ -85,7 +86,7 @@ public class DifficultyTestHarness : MonoBehaviour
         csv.WriteLine("Floor,Rooms,RoomTargetMin,RoomTargetMax,GenAttempts,GenTimeMicros,Connected," +
                       "EnemyBudget,EnemiesActual,PotionBudget,PotionsActual," +
                       "HPMultiplier,DamageMultiplier,MinRoomSize,CAIterations,MinNodeSize,SpawnInterval,ConnectivityAttempts," +
-                      "BranchingRejections,RoomsOnCriticalPath,RoomsOffPath,KeyRoomDistance");
+                      "BranchingRejections,LayoutProfile,RoomsOnCriticalPath,RoomsOffPath,KeyRoomDistance");
         try
         {
 #endif
@@ -114,6 +115,7 @@ public class DifficultyTestHarness : MonoBehaviour
                     connected = dungeon.LastConnected,
                     connectivityAttempts = dungeon.LastConnectivityAttempts,
                     branchingRejections = dungeon.LastBranchingRejections,
+                    layoutProfile = dungeon.LastLayoutProfile.ToString(),
                     enemyBudget = diff.enemyCount,
                     enemiesActual = actualEnemies,
                     potionBudget = diff.potionCount,
@@ -136,7 +138,7 @@ public class DifficultyTestHarness : MonoBehaviour
                     r.connected, r.enemyBudget, r.enemiesActual, r.potionBudget, r.potionsActual,
                     r.hpMultiplier.ToString("F2"), r.damageMultiplier.ToString("F2"),
                     r.minRoomSize, r.caIterations, r.minNodeSize, r.spawnInterval.ToString("F1"),
-                    r.connectivityAttempts, r.branchingRejections, r.roomsOnCriticalPath, r.roomsOffPath, r.keyRoomDistance
+                    r.connectivityAttempts, r.branchingRejections, r.layoutProfile, r.roomsOnCriticalPath, r.roomsOffPath, r.keyRoomDistance
                 ));
 #endif
 
