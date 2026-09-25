@@ -536,21 +536,27 @@ public class DungeonGenerator : MonoBehaviour
 #endif
     }
 
-    // Deterministic per-floor topology pick. Floors 1-3 draw only from {Quad, Organic}:
-    // Rows/Columns force the top splits one way, which on a small floor (~5-8 rooms) can
-    // collapse toward a near-linear chain and make the branching gate thrash. Keeping the
-    // banded profiles off the first floors testers see is the biasing mitigation — the gate
-    // is the backstop, not the first line of defence. Floors 4+ use all four.
+    // Deterministic per-floor topology pick, tiered to introduce layout asymmetry
+    // progressively rather than uniformly from floor 1 (aligned with the difficulty
+    // curve). Rows/Columns force the top splits one way, which on a small floor can
+    // collapse toward a near-linear chain and make the branching gate thrash — so the
+    // banded profiles are held back to later, larger floors. Bands keep more than one
+    // profile so no long run of floors shares an identical layout kind:
+    //   floors 1-15  : {Quad, Organic}                 (early, safe — no forced banding)
+    //   floors 16-24 : {Quad, Organic, Rows}           (asymmetry ramps in near the curve)
+    //   floors 25+   : {Quad, Organic, Rows, Columns}  (full set past the inflection point)
+    // The floor*31+7 hash keeps selection within each band deterministic per floor.
     LayoutProfile ChooseLayoutProfile(int floor)
     {
-        if (floor <= 3)
-        {
-            LayoutProfile[] safe = { LayoutProfile.Quad, LayoutProfile.Organic };
-            return safe[Mathf.Abs(floor * 31 + 7) % safe.Length];
-        }
+        LayoutProfile[] band;
+        if (floor <= 15)
+            band = new[] { LayoutProfile.Quad, LayoutProfile.Organic };
+        else if (floor <= 24)
+            band = new[] { LayoutProfile.Quad, LayoutProfile.Organic, LayoutProfile.Rows };
+        else
+            band = new[] { LayoutProfile.Quad, LayoutProfile.Organic, LayoutProfile.Rows, LayoutProfile.Columns };
 
-        LayoutProfile[] all = { LayoutProfile.Rows, LayoutProfile.Columns, LayoutProfile.Quad, LayoutProfile.Organic };
-        return all[Mathf.Abs(floor * 31 + 7) % all.Length];
+        return band[Mathf.Abs(floor * 31 + 7) % band.Length];
     }
 
     void SplitNode(BSPNode node)

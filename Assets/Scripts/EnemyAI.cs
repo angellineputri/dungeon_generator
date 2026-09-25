@@ -27,6 +27,8 @@ public class EnemyAI : MonoBehaviour
     public float moveSpeed = 3f;
     public float patrolSpeedMultiplier = 0.5f;
     public float closeRangeDistance = 2f;
+    [Tooltip("Arrival radius for close combat. Once within this distance the enemy holds position instead of seeking, preventing per-frame overshoot jitter around the player. Keep below closeRangeDistance so it still deals contact damage while parked.")]
+    public float stopDistance = 0.6f;
     public float collisionRadius = 0.15f;
 
     [Header("Difficulty-scaled stats")]
@@ -276,6 +278,12 @@ public class EnemyAI : MonoBehaviour
     // close range only — no A* here, so this still needs a wall check
     void MoveDirectlyTowardsPlayerSafe()
     {
+        // Arrival radius: once close enough, hold position. Without this the fixed-size
+        // step overshoots the player's exact position every frame and reverses, producing
+        // the stationary jitter. Damage still ticks in HandleChase, independent of this.
+        if (Vector3.Distance(transform.position, player.position) <= stopDistance)
+            return;
+
         Vector3 dir = (player.position - transform.position).normalized;
         Vector3 moveDelta = dir * moveSpeed * Time.deltaTime;
 
@@ -326,7 +334,11 @@ public class EnemyAI : MonoBehaviour
         }
 
         currentPath = Pathfinding.FindPath(dungeon, start, target);
-        pathIndex = 0;
+        // Skip path[0] — it's the enemy's own current cell. Targeting it first would
+        // steer the enemy back to its cell center every recalc (which fires as often as
+        // minRecalcInterval while the player moves), stalling it in place instead of
+        // advancing toward the first real step.
+        pathIndex = (currentPath != null && currentPath.Count > 1) ? 1 : 0;
     }
 
     Vector2Int FindNearestWalkable(Vector2Int origin, int maxRadius = 3)
