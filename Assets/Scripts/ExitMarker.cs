@@ -1,18 +1,12 @@
 using UnityEngine;
 
-/// <summary>
-/// Draws a simple glowing marker at DungeonGenerator.ExitRoom's centre and keeps it
-/// updated every time the floor regenerates. Builds its own circular sprite at runtime
-/// so it works immediately without needing an imported asset — swap the generated
-/// sprite for your own art later by assigning markerSprite in the Inspector.
-/// </summary>
 public class ExitMarker : MonoBehaviour
 {
     [Header("References")]
     public DungeonGenerator dungeon;
 
     [Header("Appearance")]
-    public Color markerColor = new Color(1f, 0.85f, 0.2f); // warm gold
+    public Color markerColor = new Color(1f, 0.85f, 0.2f);
     public float markerScale = 0.6f;
     [Tooltip("Optional — assign your own sprite here to skip the generated placeholder circle.")]
     public Sprite markerSprite;
@@ -27,7 +21,7 @@ public class ExitMarker : MonoBehaviour
 
         sr.sprite = markerSprite != null ? markerSprite : BuildCircleSprite();
         sr.color = markerColor;
-        sr.sortingOrder = 10; // draw above the tilemap and enemies
+        sr.sortingOrder = 10;
         transform.localScale = Vector3.one * markerScale;
     }
 
@@ -62,7 +56,6 @@ public class ExitMarker : MonoBehaviour
         transform.position = dungeon.tilemapCA.transform.position + new Vector3(center.x, center.y, -0.1f);
     }
 
-    // Procedural filled-circle sprite so this works with zero imported assets.
     Sprite BuildCircleSprite()
     {
         int size = 64;

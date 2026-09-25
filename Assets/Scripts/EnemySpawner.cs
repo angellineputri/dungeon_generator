@@ -2,23 +2,6 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// Listens for DungeonGenerator.OnFloorGenerated and distributes that floor's total enemy
-/// budget (DifficultyManager.GetDifficultyParams(floor).enemyCount) across all rooms,
-/// proportional to room area, using the largest remainder method so the distributed counts
-/// always sum exactly to the budget.
-///
-/// No per-room cap and no room is excluded, so the natural behaviour across floors is:
-///   - Low floors (budget less than room count): enemies are scattered across a few rooms,
-///     several rooms are empty.
-///   - Mid floors (budget roughly equal to room count): most/all rooms get one enemy.
-///   - High floors (budget exceeds room count, e.g. 15 enemies across 6-10 rooms by floor
-///     9-10): multiple enemies stack in the same room, especially larger ones.
-///
-/// Each spawned enemy is assigned its room as home room (EnemyAI.forcedSpawnRoom), which is
-/// also what confines its patrol and chase leash to that room — multiple enemies can share
-/// the same home room without conflict.
-/// </summary>
 public class EnemySpawner : MonoBehaviour
 {
     [Header("References")]
@@ -61,8 +44,6 @@ public class EnemySpawner : MonoBehaviour
         if (allRooms == null || allRooms.Count == 0 || enemyPrefab == null)
             yield break;
 
-        // Never spawn in the player's starting room (the smallest room, per
-        // DungeonGenerator.PlayerSpawnRoom).
         RectInt playerRoom = dungeon.PlayerSpawnRoom;
         List<RectInt> eligibleRooms = new List<RectInt>();
         foreach (var room in allRooms)
@@ -74,12 +55,10 @@ public class EnemySpawner : MonoBehaviour
         }
 
         if (eligibleRooms.Count == 0)
-            yield break; // edge case: floor only has one room total
+            yield break;
 
         List<int> perRoomCounts = DistributeEnemyCounts(eligibleRooms, diff.enemyCount);
 
-        // Flatten into a spawn queue (room index repeated per its assigned count),
-        // shuffled so spawning isn't strictly room-by-room.
         List<int> spawnQueue = new List<int>();
         for (int i = 0; i < eligibleRooms.Count; i++)
             for (int j = 0; j < perRoomCounts[i]; j++)
@@ -87,22 +66,12 @@ public class EnemySpawner : MonoBehaviour
 
         Shuffle(spawnQueue);
 
-        // Spawn everything immediately — no stagger between enemies. diff.spawnInterval
-        // is no longer used here; it's kept in DifficultyParams in case you want staggered
-        // spawning again later (e.g. for a "waves" mode), but this loop ignores it.
         foreach (int roomIndex in spawnQueue)
             SpawnOneInRoom(eligibleRooms[roomIndex], diff);
 
         yield break;
     }
 
-    /// <summary>
-    /// Splits totalCount across rooms proportional to room area using the largest
-    /// remainder method: each room gets floor(its share), then leftover units go to
-    /// the rooms with the biggest fractional remainder, so the result always sums
-    /// exactly to totalCount. No exclusions and no per-room cap — a room's count can
-    /// exceed 1 once the budget is large enough relative to room count.
-    /// </summary>
     List<int> DistributeEnemyCounts(List<RectInt> rooms, int totalCount)
     {
         int n = rooms.Count;

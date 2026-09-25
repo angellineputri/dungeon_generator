@@ -1,20 +1,8 @@
 using UnityEngine;
 
-/// <summary>
-/// 8-direction frame-swap animation for the player. Movement direction is derived
-/// from the player's ACTUAL per-frame position delta (collision-resolved), bucketed
-/// into 8 octants by angle — the same decoupled approach as the previous animator,
-/// so it needs no movement state from PlayerController. Attacks are driven by
-/// PlayerController.OnAttack (fired on real, cooldown-gated swings), which takes
-/// priority over run/idle for the swing's duration with facing frozen at swing
-/// start. Put this on the Player GameObject next to its SpriteRenderer and
-/// PlayerController; assign the frame arrays in the Inspector.
-/// </summary>
 [RequireComponent(typeof(SpriteRenderer))]
 public class PlayerDirectionalAnimator : MonoBehaviour
 {
-    // Octant indices used throughout: 0=Right, 1=UpRight, 2=Up, 3=UpLeft,
-    // 4=Left, 5=DownLeft, 6=Down, 7=DownRight.
 
     [Header("Run (2 frames each)")]
     public Sprite[] runRight;
@@ -52,8 +40,8 @@ public class PlayerDirectionalAnimator : MonoBehaviour
 
     private SpriteRenderer sr;
     private PlayerController player;
-    private int facing = 6; // default Down
-    private bool facingRight = true; // last horizontal orientation, for idle L/R
+    private int facing = 6;
+    private bool facingRight = true;
     private Vector3 lastPos;
 
     private Sprite[] currentClip;
@@ -80,7 +68,6 @@ public class PlayerDirectionalAnimator : MonoBehaviour
         if (player != null) player.OnAttack -= StartAttack;
     }
 
-    // Begin an attack swing in the current facing, frozen for its duration.
     void StartAttack()
     {
         Sprite[] clip = AttackClip(facing);
@@ -91,19 +78,16 @@ public class PlayerDirectionalAnimator : MonoBehaviour
 
     void Update()
     {
-        // Movement from real (collision-resolved) position change since last frame.
+
         Vector3 delta = transform.position - lastPos;
         lastPos = transform.position;
         float speed = Time.deltaTime > 0f ? delta.magnitude / Time.deltaTime : 0f;
         bool moving = speed > moveThreshold;
 
-        // Face the movement octant only while moving and not mid-swing, so an
-        // attack keeps the direction it started with and idle keeps the last facing.
         if (moving && !attacking)
         {
             facing = Octant(delta);
-            // Remember last horizontal orientation for the left/right idle; pure
-            // Up (2) / Down (6) movement leaves it unchanged.
+
             if (facing != 2 && facing != 6)
                 facingRight = facing == 0 || facing == 1 || facing == 7;
         }
@@ -153,7 +137,7 @@ public class PlayerDirectionalAnimator : MonoBehaviour
             case 4: return runLeft;
             case 5: return runDownLeft;
             case 6: return runDown;
-            default: return runDownRight; // 7
+            default: return runDownRight;
         }
     }
 
@@ -168,7 +152,7 @@ public class PlayerDirectionalAnimator : MonoBehaviour
             case 4: return atkLeft;
             case 5: return atkDownLeft;
             case 6: return atkDown;
-            default: return atkDownRight; // 7
+            default: return atkDownRight;
         }
     }
 
@@ -176,8 +160,6 @@ public class PlayerDirectionalAnimator : MonoBehaviour
     {
         if (clip == null || clip.Length == 0) return;
 
-        // Restart on state change so switching between clips of different lengths
-        // never lands on a stale/out-of-range frame.
         if (clip != currentClip)
         {
             currentClip = clip;

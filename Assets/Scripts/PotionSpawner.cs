@@ -1,11 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// Listens for DungeonGenerator.OnFloorGenerated and places diff.potionCount potions
-/// at random walkable positions across the floor's rooms (excluding the player's
-/// spawn room, so there's always a reason to actually explore).
-/// </summary>
 public class PotionSpawner : MonoBehaviour
 {
     [Header("References")]
@@ -43,10 +38,6 @@ public class PotionSpawner : MonoBehaviour
         RoomGraph graph = dungeon.RoomGraph;
         int spawnIdx = dungeon.PlayerSpawnRoomIndex;
 
-        // Weight each eligible room (everything except the player's spawn room) toward
-        // off-critical-path rooms and toward greater distance from spawn, so potions
-        // reward stepping off the main route rather than sitting on it. If the graph
-        // isn't available, every eligible room gets equal weight (old behaviour).
         List<int> eligible = new List<int>();
         List<float> weights = new List<float>();
         float totalWeight = 0f;
@@ -83,7 +74,6 @@ public class PotionSpawner : MonoBehaviour
         }
     }
 
-    // Weighted random room-index pick; uniform fallback if weights are degenerate.
     int PickWeighted(List<int> indices, List<float> weights, float totalWeight)
     {
         if (totalWeight <= 0f)

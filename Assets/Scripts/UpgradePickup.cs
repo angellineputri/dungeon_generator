@@ -2,14 +2,6 @@ using UnityEngine;
 
 public enum UpgradeType { Power, Vitality }
 
-/// <summary>
-/// A permanent stat upgrade pickup. Same pattern as PotionPickup/KeyPickup (procedural
-/// sprite, distance-checked TryCollect). Two kinds:
-///   - Power:    +attackDamage on PlayerController
-///   - Vitality: +maxHealth on PlayerHealth (NEVER currentHealth — a bigger bar, not a heal)
-/// Visually distinct from potions (green circle) and keys (gold diamond): Power is a red
-/// up-chevron, Vitality is a blue cross.
-/// </summary>
 public class UpgradePickup : MonoBehaviour
 {
     public UpgradeType type = UpgradeType.Power;
@@ -30,7 +22,6 @@ public class UpgradePickup : MonoBehaviour
         transform.localScale = Vector3.one * 0.55f;
     }
 
-    // Returns true (and applies the upgrade + self-destructs) when the player is in range.
     public bool TryCollect(Vector3 playerWorldPos, PlayerController pc, PlayerHealth ph)
     {
         if (Vector3.Distance(transform.position, playerWorldPos) > pickupRadius)
@@ -42,7 +33,7 @@ public class UpgradePickup : MonoBehaviour
         }
         else
         {
-            if (ph != null) ph.IncreaseMaxHealth(amount); // does NOT touch currentHealth
+            if (ph != null) ph.IncreaseMaxHealth(amount);
         }
 
         Destroy(gameObject);
@@ -61,7 +52,7 @@ public class UpgradePickup : MonoBehaviour
         for (int y = 0; y < size; y++)
             for (int x = 0; x < size; x++)
             {
-                // Upward chevron: two diagonal bands meeting at the top-centre.
+
                 float dx = Mathf.Abs(x - c.x);
                 bool band = Mathf.Abs((y - 6) - dx) <= 5 && y >= 6 && y <= size - 6;
                 tex.SetPixel(x, y, band ? Color.white : new Color(0, 0, 0, 0));

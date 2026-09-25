@@ -44,10 +44,7 @@ public class PlayerController : MonoBehaviour
 
     void Start()
     {
-        // Fallback for the very first floor, in case OnEnable subscribed after
-        // DungeonGenerator already finished its first Generate() call (shouldn't
-        // normally happen given Unity's Awake->OnEnable->Start ordering, but this
-        // keeps the player from getting stuck at the origin if it ever does).
+
         if (dungeon != null && dungeon.CurrentFloor > 0)
             RespawnAtValidPosition();
         else
@@ -62,15 +59,10 @@ public class PlayerController : MonoBehaviour
         RespawnAtValidPosition();
     }
 
-    // Called on the very first floor and again every time the dungeon regenerates
-    // (Space key), via DungeonGenerator.OnFloorGenerated. No need to wait/coroutine
-    // here since Rooms is already fully populated by the time this event fires.
     void RespawnAtValidPosition()
     {
         if (dungeon.Rooms == null || dungeon.Rooms.Count == 0) return;
 
-        // Always the smallest room on the floor, decided once by DungeonGenerator
-        // so EnemySpawner excludes this exact room too.
         RectInt room = dungeon.PlayerSpawnRoom;
         Vector2Int center = new Vector2Int(
             room.x + room.width / 2,
@@ -116,14 +108,6 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // Simple radius melee swing — no aiming needed on a top-down grid. Hits every
-    // enemy within attackRange, consistent with the distance-check pattern already
-    // used everywhere else in this project (potion pickup, exit trigger, contact damage).
-    // Costs mana; fizzles with no damage (but cooldown still applies) if you're dry —
-    // that's the actual point, since it's what stops holding F from being free forever.
-    // Fires only when an attack actually goes through (cooldown ready AND mana paid),
-    // so PlayerDirectionalAnimator plays the swing on real attacks and not on a dry
-    // fizzle. Subscribed to drive the attack animation without re-reading input.
     public event System.Action OnAttack;
 
     void Attack()
@@ -152,14 +136,6 @@ public class PlayerController : MonoBehaviour
         ShowAttackEffect(hitAnything, outOfMana: false);
     }
 
-    // Brief expanding ring at the player's position so the attack is visible on
-    // screen (and in the demo video) even without a sprite animation system.
-    // The ring's world-space diameter is derived to exactly match attackRange
-    // (localScale = attackRange * 2, sprite's native diameter is 1 unit), so
-    // bumping attackRange automatically makes the visible circle bigger too —
-    // no separate "circle size" value to keep in sync.
-    // Faint blue-gray means "fizzled, out of mana" — distinct from a whiffed
-    // (gray) or landed (yellow) hit so it's clear on screen why nothing happened.
     void ShowAttackEffect(bool hit, bool outOfMana)
     {
         GameObject fx = new GameObject("AttackSwing");
@@ -199,8 +175,6 @@ public class PlayerController : MonoBehaviour
         return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
     }
 
-    // Advances to the next floor only when the player is close to the exit marker's
-    // exact position, not just anywhere inside the (potentially large) exit room.
     void CheckExitReached()
     {
         RectInt exit = dungeon.ExitRoom;
@@ -212,8 +186,7 @@ public class PlayerController : MonoBehaviour
 
         if (Vector3.Distance(transform.position, exitWorldPos) <= exitTriggerRadius)
         {
-            // Exit is locked until this floor's key is collected. If no KeyManager is
-            // wired up, behave exactly as before (always open).
+
             if (keyManager != null && !keyManager.HasKey)
             {
                 keyManager.NotifyLockedExit();
@@ -226,8 +199,7 @@ public class PlayerController : MonoBehaviour
     void CheckPotionPickups()
     {
         PlayerHealth health = GetComponent<PlayerHealth>();
-        // FindObjectsByType is fine here — potion counts per floor are tiny (1-3),
-        // this isn't a hot path that needs a cached registry.
+
         PotionPickup[] potions = FindObjectsByType<PotionPickup>(FindObjectsSortMode.None);
         foreach (var potion in potions)
             potion.TryCollect(transform.position, health);
@@ -236,8 +208,8 @@ public class PlayerController : MonoBehaviour
     bool IsPositionWalkable(Vector3 worldPos)
     {
         Vector3 local = worldPos - dungeon.tilemapCA.transform.position;
-        local.x -= collisionXShift; // rebalance horizontal gap/overlap against walls
-        local.y -= collisionYShift; // rebalance vertical gap/overlap against walls
+        local.x -= collisionXShift;
+        local.y -= collisionYShift;
 
         Vector2[] checkOffsets =
         {
@@ -246,8 +218,7 @@ public class PlayerController : MonoBehaviour
             new Vector2(-collisionRadius, 0),
             new Vector2(0, collisionRadius),
             new Vector2(0, -collisionRadius),
-            // Diagonal corners — without these, the player slips through wall
-            // corners and thin 1-cell nubs on diagonal approaches.
+
             new Vector2(collisionRadius, collisionRadius),
             new Vector2(-collisionRadius, collisionRadius),
             new Vector2(collisionRadius, -collisionRadius),

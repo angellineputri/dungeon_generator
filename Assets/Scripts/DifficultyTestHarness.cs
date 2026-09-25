@@ -6,31 +6,6 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-/// <summary>
-/// Press L to run a batch test: jumps through floors 1-100 (JumpToFloor, which
-/// each generates a fresh layout and fires OnFloorGenerated — so EnemySpawner
-/// and PotionSpawner actually populate each floor for real, not simulated),
-/// and logs one row per floor covering everything needed to judge:
-///
-///   PLAYABILITY — did every floor generate cleanly (GenAttempts low, not
-///   hitting the 100-attempt ceiling), is connectivity always true, did the
-///   spawners actually place close to their target enemy/potion counts (a
-///   large gap between budget and actual means rooms ran out to place them in).
-///
-///   SCALABILITY — do EnemyCount, HPMultiplier, DamageMultiplier, RoomCount,
-///   MinRoomSize, MinNodeSize all show a genuine upward/downward trend across
-///   the 100 rows rather than flatlining partway through (the exact problem
-///   this harness exists to catch, per the floor-19 plateau found earlier).
-///
-/// Writes two files to the project's Assets folder:
-///   - difficulty_test_log.csv         raw data, one row per floor, for charting
-///   - difficulty_test_summary.txt     aligned, human-readable table + a summary
-///                                     block (min/max/avg per column) — this is
-///                                     the one to screenshot for the report.
-///
-/// One frame is yielded between floors so 100 back-to-back generations don't
-/// freeze the editor in a single frame.
-/// </summary>
 public class DifficultyTestHarness : MonoBehaviour
 {
     [Header("References")]
@@ -41,9 +16,6 @@ public class DifficultyTestHarness : MonoBehaviour
 
     private bool running = false;
 
-    // One row of results, kept in memory so the summary pass can compute
-    // min/max/avg after the full run finishes, instead of streaming straight
-    // to disk with no way to aggregate at the end.
     private struct FloorResult
     {
         public int floor, rooms, roomTargetMin, roomTargetMax, genAttempts;
@@ -77,9 +49,7 @@ public class DifficultyTestHarness : MonoBehaviour
         Debug.Log($"[DifficultyTestHarness] Starting batch test: floors 1-{floorsToTest}...");
 
         var results = new List<FloorResult>(floorsToTest);
-        // File output is Editor-only. Under WebGL Application.dataPath is a URL and
-        // StreamWriter throws, so the whole CSV path is compiled out — the test loop
-        // itself still runs (harmless), it just produces no file.
+
 #if !UNITY_WEBGL
         string csvPath = Path.Combine(Application.dataPath, "difficulty_test_log.csv");
         StreamWriter csv = new StreamWriter(csvPath, false);
@@ -94,10 +64,6 @@ public class DifficultyTestHarness : MonoBehaviour
             {
                 dungeon.JumpToFloor(floor);
 
-                // Wait one frame before counting — Destroy() is deferred to end of
-                // frame in Unity, so counting immediately would double-count the
-                // previous floor's not-yet-actually-removed enemies/potions on top
-                // of the new floor's.
                 yield return null;
 
                 DifficultyParams diff = DifficultyManager.GetDifficultyParams(floor);
@@ -149,8 +115,6 @@ public class DifficultyTestHarness : MonoBehaviour
                 if (System.Math.Abs(r.enemiesActual - r.enemyBudget) > r.enemyBudget / 2)
                     Debug.LogWarning($"[DifficultyTestHarness] Floor {floor}: enemy budget was {r.enemyBudget} but only {r.enemiesActual} actually spawned — rooms may be running out.");
 
-                // Key-and-lock invariants: the key room must exist, be reachable, and
-                // never be the spawn or exit room.
                 int keyIdx = dungeon.KeyRoomIndex;
                 if (keyIdx < 0)
                     Debug.LogWarning($"[DifficultyTestHarness] Floor {floor}: no key room placed (off-path={r.roomsOffPath}).");
@@ -180,9 +144,6 @@ public class DifficultyTestHarness : MonoBehaviour
         running = false;
     }
 
-    // Aligned plain-text table plus a min/max/avg summary block. Deliberately
-    // NOT comma-separated — this is the version meant to be read directly or
-    // screenshotted for the report, not parsed by a spreadsheet.
     void WriteHumanReadableSummary(List<FloorResult> results)
     {
 #if !UNITY_WEBGL
@@ -195,8 +156,6 @@ public class DifficultyTestHarness : MonoBehaviour
         sb.AppendLine(new string('=', 78));
         sb.AppendLine();
 
-        // Sample every 10th floor for the table body so it stays readable —
-        // the full detail is still in the CSV for anyone who wants every row.
         sb.AppendLine("Sampled floors (every 10th, plus first and last):");
         sb.AppendLine($"{"Floor",-7}{"Rooms",-8}{"Attempts",-10}{"Connected",-11}{"Enemies",-10}{"Potions",-9}{"HP x",-7}{"Dmg x",-7}");
         sb.AppendLine(new string('-', 78));
@@ -244,8 +203,7 @@ public class DifficultyTestHarness : MonoBehaviour
             if (results[i].enemyBudget == results[i - 1].enemyBudget &&
                 results[i].floor > 20 && firstFlatFloor == -1)
             {
-                // only flag if it stays flat for a long stretch, not a normal
-                // same-tier neighbour — checked 5 floors ahead
+
                 bool staysFlat = true;
                 for (int j = i; j < Mathf.Min(i + 5, results.Count); j++)
                     if (results[j].enemyBudget != results[i].enemyBudget) staysFlat = false;

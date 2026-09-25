@@ -10,7 +10,7 @@ public class EnemyAI : MonoBehaviour
 
     [Header("AI Settings")]
     public float detectionRadius = 20f;
-    public float loseRadius = 28f; // hard fallback cap; the leash below is usually the binding constraint
+    public float loseRadius = 28f;
 
     [Header("Territory / Leash")]
     [Tooltip("How many tiles beyond its home room's edges this enemy can chase into " +
@@ -47,8 +47,6 @@ public class EnemyAI : MonoBehaviour
         currentDamage = baseDamage * damageMultiplier;
     }
 
-    // Called by PlayerController.Attack(). currentHP was previously computed by
-    // ApplyDifficulty but nothing consumed it — this closes that loop.
     public void TakeDamage(float amount)
     {
         currentHP -= amount;
@@ -102,9 +100,7 @@ public class EnemyAI : MonoBehaviour
     {
         currentHP = baseHP;
         currentDamage = baseDamage;
-        // Starts primed at a full interval, not 0, so an enemy can never land an
-        // instant free hit the moment it first reaches contact range — same fix
-        // applied below for re-entering range after stepping back out.
+
         damageTickTimer = damageTickInterval;
         StartCoroutine(SpawnAtValidPosition());
     }
@@ -136,10 +132,6 @@ public class EnemyAI : MonoBehaviour
         Vector2Int playerGridPos = WorldToGrid(player.position);
         float distToPlayer = Vector3.Distance(transform.position, player.position);
 
-        // The player's own spawn room is a hard no-chase zone, regardless of this
-        // enemy's leash margin. Without this, a short corridor between rooms can let
-        // the leash zone overlap the player's room, so an enemy keeps chasing a few
-        // steps past the doorway even though it "shouldn't" be able to reach there.
         bool playerInOwnRoom = IsInsideRoom(playerGridPos, dungeon.PlayerSpawnRoom);
         bool playerInLeash = IsWithinLeash(playerGridPos) && !playerInOwnRoom;
 
@@ -153,14 +145,13 @@ public class EnemyAI : MonoBehaviour
                 break;
 
             case State.Chase:
-                // Leaving the leash zone (player moved into another room/corridor beyond
-                // the margin) or exceeding the hard fallback radius both send it home.
+
                 if (!playerInLeash || distToPlayer > loseRadius)
                     currentState = State.Returning;
                 break;
 
             case State.Returning:
-                // Re-engage if the player wanders back into leash range while it's heading home.
+
                 if (distToPlayer <= detectionRadius && playerInLeash)
                     currentState = State.Chase;
                 break;
@@ -202,8 +193,7 @@ public class EnemyAI : MonoBehaviour
         }
         else
         {
-            // Full interval, not 0 — stepping back into range after breaking away
-            // gives the same grace period as a first contact, not a free instant hit.
+
             damageTickTimer = damageTickInterval;
         }
 
@@ -241,7 +231,7 @@ public class EnemyAI : MonoBehaviour
         if (arrived)
         {
             currentState = State.Patrol;
-            currentPath = null; // force a fresh patrol target next frame
+            currentPath = null;
         }
     }
 
@@ -256,8 +246,6 @@ public class EnemyAI : MonoBehaviour
         FollowPath(moveSpeed * patrolSpeedMultiplier);
     }
 
-    // True if pos is inside this enemy's home room, expanded by leashMargin tiles in
-    // every direction — covers the corridor mouth just outside the room's walls.
     bool IsWithinLeash(Vector2Int pos)
     {
         int minX = homeRoom.x - leashMargin;
@@ -267,20 +255,15 @@ public class EnemyAI : MonoBehaviour
         return pos.x >= minX && pos.x <= maxX && pos.y >= minY && pos.y <= maxY;
     }
 
-    // True if pos is inside the given room's actual bounds (no margin) — used to keep
-    // the player's spawn room a hard safe zone that no enemy will chase into.
     bool IsInsideRoom(Vector2Int pos, RectInt room)
     {
         return pos.x >= room.x && pos.x < room.x + room.width
             && pos.y >= room.y && pos.y < room.y + room.height;
     }
 
-    // close range only — no A* here, so this still needs a wall check
     void MoveDirectlyTowardsPlayerSafe()
     {
-        // Arrival radius: once close enough, hold position. Without this the fixed-size
-        // step overshoots the player's exact position every frame and reverses, producing
-        // the stationary jitter. Damage still ticks in HandleChase, independent of this.
+
         if (Vector3.Distance(transform.position, player.position) <= stopDistance)
             return;
 
@@ -320,8 +303,6 @@ public class EnemyAI : MonoBehaviour
         return true;
     }
 
-    // shared by chase (target = player), returning (target = home center),
-    // and patrol (target = patrolTarget)
     void RecalculatePathTo(Vector2Int targetGrid)
     {
         Vector2Int start = FindNearestWalkable(WorldToGrid(transform.position));
@@ -334,10 +315,7 @@ public class EnemyAI : MonoBehaviour
         }
 
         currentPath = Pathfinding.FindPath(dungeon, start, target);
-        // Skip path[0] — it's the enemy's own current cell. Targeting it first would
-        // steer the enemy back to its cell center every recalc (which fires as often as
-        // minRecalcInterval while the player moves), stalling it in place instead of
-        // advancing toward the first real step.
+
         pathIndex = (currentPath != null && currentPath.Count > 1) ? 1 : 0;
     }
 
@@ -363,8 +341,6 @@ public class EnemyAI : MonoBehaviour
         return new Vector2Int(-1, -1);
     }
 
-    // A* guarantees each waypoint is walkable and connected — no manual
-    // collision check needed here, used by chase, returning, and patrol
     void FollowPath(float speed)
     {
         if (currentPath == null || pathIndex >= currentPath.Count) return;
@@ -376,8 +352,6 @@ public class EnemyAI : MonoBehaviour
             pathIndex++;
     }
 
-    // Patrol targets are now confined to this enemy's own home room only —
-    // it never wanders into another room while patrolling.
     void PickNewPatrolTarget()
     {
         patrolTarget = new Vector2Int(

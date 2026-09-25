@@ -1,14 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// Testing-only Previous/Next floor buttons, built at runtime, bottom-center.
-/// Calls DungeonGenerator.JumpToFloor, which generates a fresh random layout at
-/// the target floor's difficulty — floors aren't cached, so "Previous" doesn't
-/// return to a specific earlier layout, just to that floor's difficulty tier.
-/// Remove or disable this GameObject before any real playtest/demo — it's purely
-/// a shortcut for checking difficulty curves across floors without walking there.
-/// </summary>
 public class FloorDebugButtons : MonoBehaviour
 {
     [Header("References")]

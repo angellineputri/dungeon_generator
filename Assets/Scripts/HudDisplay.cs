@@ -2,13 +2,6 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 
-/// <summary>
-/// Minimal always-on gameplay HUD: a prominent top-centre floor counter (depth is the
-/// score) and a key indicator so the current objective is legible. Deliberately plain —
-/// this is about the player seeing the goal, not a polished UI. Builds its own canvas at
-/// a lower sort order than GameStateManager's (100) so the Start / Game Over panels cover
-/// it. Auto-finds its references.
-/// </summary>
 public class HudDisplay : MonoBehaviour
 {
     [Header("References (auto-found if empty)")]
@@ -48,7 +41,7 @@ public class HudDisplay : MonoBehaviour
         canvasObj.transform.SetParent(transform, false);
         Canvas canvas = canvasObj.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 50; // below GameStateManager's overlays (100)
+        canvas.sortingOrder = 50;
         CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920, 1080);

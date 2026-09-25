@@ -1,12 +1,6 @@
 using UnityEngine;
 using TMPro;
 
-/// <summary>
-/// Minimal player health system. Intentionally simple: no invulnerability frames,
-/// no death animation, no game-over flow yet — just a number that damage reduces
-/// and potions restore, with an optional on-screen readout. Enough for the
-/// difficulty curve and resource scarcity to actually mean something in play.
-/// </summary>
 public class PlayerHealth : MonoBehaviour
 {
     [Header("Health")]
@@ -37,8 +31,6 @@ public class PlayerHealth : MonoBehaviour
         UpdateText();
     }
 
-    // Health persists across floors by design — a fresh full heal every floor
-    // would make potions pointless. Swap this out later if you want otherwise.
     void ResetHealth()
     {
         UpdateText();
@@ -61,10 +53,6 @@ public class PlayerHealth : MonoBehaviour
         UpdateText();
     }
 
-    // Permanent upgrade: raises the maximum health bar WITHOUT changing currentHealth.
-    // Intentionally does not heal — a bigger bar, not a refill — so that (a) potions
-    // stay meaningful and (b) SessionTelemetry, which infers heals from positive
-    // currentHealth deltas, never mistakes an upgrade for an EffectiveHeal.
     public void IncreaseMaxHealth(float amount)
     {
         maxHealth += amount;

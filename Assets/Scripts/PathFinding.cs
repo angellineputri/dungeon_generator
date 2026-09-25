@@ -64,12 +64,12 @@ public static class Pathfinding
             }
         }
 
-        return null; // no path found
+        return null;
     }
 
     private static int Heuristic(Vector2Int a, Vector2Int b)
     {
-        return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y); // Manhattan distance
+        return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y);
     }
 
     private static List<Vector2Int> ReconstructPath(Node endNode)

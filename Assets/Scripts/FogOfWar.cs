@@ -2,17 +2,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
-/// <summary>
-/// Radius-based fog of war (not line-of-sight — see report Section 2/3 for why that
-/// tradeoff was made given the timeline). Three tiers per tile:
-///   - Never seen: fully opaque black
-///   - Explored but not currently visible: dimmed, remembered
-///   - Currently visible: fully clear
-///
-/// Recomputes only when the player crosses into a new grid tile, not every frame,
-/// since nothing here needs sub-tile precision and it keeps this cheap even though
-/// it's an unoptimized full-tilemap approach.
-/// </summary>
 public class FogOfWar : MonoBehaviour
 {
     [Header("References")]
@@ -96,9 +85,7 @@ public class FogOfWar : MonoBehaviour
 
     void UpdateVisibility(Vector2Int center)
     {
-        // Dim previously-visible cells back down to "remembered" before computing
-        // the new visible set — otherwise tiles the player has walked away from
-        // would stay permanently fully clear instead of fading to explored.
+
         foreach (var pos in currentlyVisibleCells)
             fogTilemap.SetColor(pos, new Color(0, 0, 0, exploredAlpha));
         currentlyVisibleCells.Clear();
@@ -115,9 +102,6 @@ public class FogOfWar : MonoBehaviour
                 float dist = Vector2.Distance(new Vector2(x, y), new Vector2(center.x, center.y));
                 if (dist > visionRadius) continue;
 
-                // Fully lit inside (visionRadius - featherWidth); graded from
-                // visibleAlpha to exploredAlpha across the outer feather band,
-                // instead of a hard on/off cutoff at exactly visionRadius.
                 float innerEdge = Mathf.Max(0f, visionRadius - featherWidth);
                 float t = Mathf.InverseLerp(innerEdge, visionRadius, dist);
                 float alpha = Mathf.Lerp(visibleAlpha, exploredAlpha, t);
@@ -136,8 +120,6 @@ public class FogOfWar : MonoBehaviour
         return new Vector2Int(Mathf.RoundToInt(local.x), Mathf.RoundToInt(local.y));
     }
 
-    // Procedural solid-white 4x4 sprite — alpha is controlled entirely per-cell via
-    // Tilemap.SetColor, so the base sprite just needs to be opaque white.
     Tile BuildSolidTile()
     {
         Texture2D tex = new Texture2D(4, 4);

@@ -1,19 +1,6 @@
 using UnityEngine;
 using TMPro;
 
-/// <summary>
-/// Owns the key-and-lock layer for a floor. Listens to DungeonGenerator.OnFloorGenerated
-/// (same pattern as EnemySpawner/PotionSpawner/FogOfWar), and each floor:
-///   - clears any previous key and resets HasKey to false (keys never carry between
-///     floors — the lock has to be re-solved every floor, like health/mana persist but
-///     the objective resets),
-///   - spawns one KeyPickup in the room DungeonGenerator chose (KeyRoomIndex).
-///
-/// PlayerController reads HasKey to gate the exit, and calls NotifyLockedExit() to
-/// surface feedback when the player reaches the exit without the key. Keeping both the
-/// key state and the feedback here means PlayerController only needs a reference and a
-/// couple of lines, and nothing else in the project has to know keys exist.
-/// </summary>
 public class KeyManager : MonoBehaviour
 {
     [Header("References")]
@@ -47,7 +34,7 @@ public class KeyManager : MonoBehaviour
 
     void HandleFloorGenerated()
     {
-        // Reset per-floor state, then place this floor's key.
+
         if (keyObj != null) Destroy(keyObj);
         keyObj = null;
         keyPickup = null;
@@ -64,8 +51,7 @@ public class KeyManager : MonoBehaviour
         var rooms = dungeon.Rooms;
         if (rooms == null || keyRoom < 0 || keyRoom >= rooms.Count)
         {
-            // No valid off-path/fallback room this floor (degenerate layout). Leave the
-            // exit effectively open rather than soft-locking the player: treat as held.
+
             hasKey = true;
             return;
         }
@@ -101,12 +87,10 @@ public class KeyManager : MonoBehaviour
         }
     }
 
-    // Called by PlayerController when the player reaches the exit without the key.
-    // Throttled so it doesn't spam every frame the player stands on the exit.
     public void NotifyLockedExit()
     {
         if (hasKey) return;
-        if (Time.time < messageClearTime) return; // a message is already showing
+        if (Time.time < messageClearTime) return;
         ShowMessage("The exit is locked — find the key first.");
     }
 

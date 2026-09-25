@@ -15,11 +15,6 @@ public class DungeonGenerator : MonoBehaviour
     [Header("BSP Settings")]
     public int minRoomSize = 8;
 
-    // BSP split threshold (controls room COUNT). Deliberately NOT exposed in the
-    // Inspector: Generate() overwrites it on every call from DifficultyManager
-    // (floor 1 = BASE_MIN_NODE_SIZE = 22), so any authored default would be dead
-    // and contradict the effective runtime value. Kept private/runtime-only so
-    // the effective value is unambiguous.
     private int minNodeSize;
 
     [Header("CA Settings")]
@@ -42,8 +37,6 @@ public class DungeonGenerator : MonoBehaviour
     [Header("UI")]
     public TextMeshProUGUI metricsText;
 
-    // Fired after a floor finishes generating and rendering, so systems like
-    // EnemySpawner can react without DungeonGenerator needing to know about them.
     public System.Action OnFloorGenerated;
 
     private int[,] grid;
@@ -59,26 +52,13 @@ public class DungeonGenerator : MonoBehaviour
     private int lastConnectivityAttempts;
     private int lastBranchingRejections;
 
-    // Minimum off-critical-path (optional) rooms a layout must have to be accepted.
-    // Guarantees every floor has somewhere optional to go — a generation invariant,
-    // not an emergent property of the seed.
     private const int MIN_OFF_PATH_ROOMS = 2;
 
-    // The active floor's BSP topology (see LayoutProfile), chosen once per floor and
-    // read by SplitNode on every attempt so the "kind" of floor is stable while the
-    // seed varies. lastLayoutProfile is the same value, surfaced for the CSV harness.
     private LayoutProfile currentProfile;
     private LayoutProfile lastLayoutProfile;
 
-    // How many of a node's top splits Rows/Columns force in their signature direction
-    // before deeper splits revert to aspect-biased random. Forcing only the top levels
-    // keeps the banded/striped SHAPE while letting bands subdivide, so even Rows still
-    // produces off-path rooms and clears the branching gate.
     private const int FORCED_SPLIT_DEPTH = 2;
 
-    // Room adjacency graph derived from the finished grid (see RoomGraph), rebuilt
-    // each Generate() after spawn/exit are known. Rooms are referenced by their index
-    // in the rooms list throughout — this stores no geometry of its own.
     private RoomGraph roomGraph;
     private int spawnRoomIndex = -1;
     private int exitRoomIndex = -1;
@@ -87,80 +67,45 @@ public class DungeonGenerator : MonoBehaviour
     private int lastRoomsOffPath;
     private int lastKeyRoomDistance = -1;
 
-    // --- Public accessors for EnemyAI / Pathfinding / EnemySpawner ---
     public int[,] Grid => grid;
     public int GridWidth => gridWidth;
     public int GridHeight => gridHeight;
     public List<RectInt> Rooms => rooms;
     public int CurrentFloor => currentFloor;
 
-    // The seed of the layout currently on screen. Read by DecorationLayer so decoration
-    // reproduces with the layout; must be sampled after Generate() has run.
     public int CurrentSeed => currentSeed;
 
-    // The room the player spawns in — always the smallest room on the floor, treated
-    // as a safe starting room. Computed once per Generate() call so PlayerController
-    // and EnemySpawner both read the exact same room without needing to coordinate
-    // with each other (they may subscribe to OnFloorGenerated in either order).
     public RectInt PlayerSpawnRoom => playerSpawnRoom;
 
-    // The floor's goal room — the room with the greatest actual walking distance
-    // (BFS over the walkable grid, not straight-line) from the player's spawn room.
-    // Reaching it advances to the next floor.
     public RectInt ExitRoom => exitRoom;
 
-    // Diagnostics from the most recent Generate() call — used by DifficultyTestHarness
-    // to verify each floor generated cleanly (didn't hit the retry ceiling) rather
-    // than needing to parse the human-readable log file.
     public int LastGenAttempts => lastGenAttempts;
     public long LastGenTimeMicros => lastGenTimeMicros;
     public bool LastConnected => lastConnected;
     public int LastRoomCountMin => lastRoomCountMin;
     public int LastRoomCountMax => lastRoomCountMax;
 
-    // Number of full-pipeline outer attempts the last Generate() call needed to
-    // produce a fully-connected floor (1 = connected on the first try, i.e. zero
-    // retries). Equals the ceiling if it gave up; surfaced so DifficultyTestHarness
-    // can log it. NOTE: this is an ATTEMPT count, not a retry count.
     public int LastConnectivityAttempts => lastConnectivityAttempts;
 
-    // How many otherwise-connected layouts the last Generate() call threw away for
-    // having fewer than MIN_OFF_PATH_ROOMS off-critical-path rooms (i.e. no optional
-    // space to explore). Logged separately from LastConnectivityAttempts so the two
-    // rejection reasons stay distinguishable in the CSV. 0 = accepted on branching
-    // the first time it was connected.
     public int LastBranchingRejections => lastBranchingRejections;
 
-    // Room adjacency graph for the current floor, and the room indices key systems
-    // read from it. Indices are into Rooms; -1 means "not determined this floor".
     public RoomGraph RoomGraph => roomGraph;
     public int PlayerSpawnRoomIndex => spawnRoomIndex;
     public int ExitRoomIndex => exitRoomIndex;
 
-    // The room the floor's key spawns in — chosen off the critical path, deepest from
-    // spawn, biased toward dead ends. -1 if no valid key room exists (degenerate floor).
     public int KeyRoomIndex => keyRoomIndex;
 
-    // Graph metrics for the last floor, surfaced for DifficultyTestHarness.
     public int LastRoomsOnCriticalPath => lastRoomsOnCriticalPath;
     public int LastRoomsOffPath => lastRoomsOffPath;
     public int LastKeyRoomDistance => lastKeyRoomDistance;
 
-    // The BSP topology chosen for the last floor, surfaced for DifficultyTestHarness.
     public LayoutProfile LastLayoutProfile => lastLayoutProfile;
 
-    // Re-runs the same generation Space already triggers, but callable from other
-    // scripts (e.g. PlayerController when the player reaches ExitRoom).
     public void AdvanceToNextFloor()
     {
         Generate();
     }
 
-    // Testing-only convenience — jumps straight to a specific floor number with a
-    // freshly generated layout at that difficulty, rather than requiring the player
-    // to actually walk to an exit each time. Floors aren't cached/stored, so this
-    // is a NEW random layout at the target floor's difficulty, not a return to
-    // whatever layout you previously saw at that floor number.
     public void JumpToFloor(int targetFloor)
     {
         currentFloor = Mathf.Max(0, targetFloor - 1);
@@ -173,7 +118,6 @@ public class DungeonGenerator : MonoBehaviour
             return false;
         return grid[x, y] == 0;
     }
-    // ----------------------------------------------------
 
     private struct GenerationLog
     {
@@ -207,48 +151,22 @@ public class DungeonGenerator : MonoBehaviour
 
     void Generate()
     {
-        // Difficulty scaling: pull this floor's parameters before generating anything,
-        // so BSP/CA use the right minRoomSize/caIterations for the floor about to be built.
+
         int nextFloor = currentFloor + 1;
         DifficultyParams diff = DifficultyManager.GetDifficultyParams(nextFloor);
         minRoomSize = diff.minRoomSize;
         caIterations = diff.caIterations;
         minNodeSize = diff.minNodeSize;
 
-        // Room count target widens on deeper floors too — otherwise every floor,
-        // no matter how far down, would still be forced into the original fixed
-        // 6-10 range even once minNodeSize allows more rooms to actually form.
-        // UNVERIFIED beyond floor 1 — watch the Console for "gave up after N
-        // attempts" warnings, which would mean a floor's target range doesn't
-        // reliably form within the 100-attempt budget below.
-        // Room count target — ramp made faster still, and final cap raised from
-        // 16 to 18. Re-testing the previous fix found floors 10-12 STILL hitting
-        // the retry ceiling: minNodeSize drops to 16 exactly at floor 10, and its
-        // natural output (16-18 rooms, confirmed in test data) already exceeded
-        // the target max (14-15) at that point, since the target didn't reach its
-        // own cap until floor 13. This version reaches its cap by floor ~9,
-        // comfortably ahead of every minNodeSize step-down, with headroom to 18
-        // to absorb occasional high-outlier seeds rather than needing an exact
-        // ceiling match.
-        int roomCountMin = Mathf.Min(16, 5 + (nextFloor - 1) / 3); // base 5, resynced with BASE_MIN_NODE_SIZE 24 (floor 1 yields ~7 rooms, clears gate)
+        int roomCountMin = Mathf.Min(16, 5 + (nextFloor - 1) / 3);
         int roomCountMax = Mathf.Min(18, 10 + (nextFloor - 1));
-        roomCountMin = Mathf.Min(roomCountMin, roomCountMax); // safety: min can never exceed max
+        roomCountMin = Mathf.Min(roomCountMin, roomCountMax);
         lastRoomCountMin = roomCountMin;
         lastRoomCountMax = roomCountMax;
 
-        // Pick this floor's BSP topology once, before the attempt loop, so every retry
-        // regenerates the SAME kind of floor with a fresh seed (the profile is the
-        // floor's identity; the seed is the variation within it). Deterministic in the
-        // floor number, so a given floor is reliably the same kind across harness runs.
         currentProfile = ChooseLayoutProfile(nextFloor);
         lastLayoutProfile = currentProfile;
 
-        // Outer attempt loop: the ENTIRE pipeline (room-count loop -> corridors ->
-        // CA -> connectivity check) is re-run from scratch until CheckConnectivity()
-        // passes, or we hit the ceiling. This deliberately wraps the whole pipeline
-        // instead of folding the stopwatch / ConnectAllRooms / ApplyCellularAutomata
-        // into the inner room-count do/while — a previous version that did so caused
-        // an infinite hang and a lost BSP root reference.
         const int maxOuterAttempts = 25;
         int outerAttempts = 0;
         int innerAttempts = 0;
@@ -264,7 +182,6 @@ public class DungeonGenerator : MonoBehaviour
         {
             outerAttempts++;
 
-            // Inner room-count loop: nothing but layout generation lives in here.
             innerAttempts = 0;
             root = null;
             do
@@ -293,28 +210,16 @@ public class DungeonGenerator : MonoBehaviour
             }
             while (rooms.Count < roomCountMin || rooms.Count > roomCountMax);
 
-            // stage 1 - BSP only
             gridBSP = CopyGrid(grid);
 
-            // stage 2 - random walk corridors on top of BSP
             ConnectAllRooms(root);
             gridRW = CopyGrid(grid);
 
-            // stage 3 - CA smoothing on top of RW
             ApplyCellularAutomata(caIterations);
             gridCA = CopyGrid(grid);
 
-            // Gate the floor on full connectivity. If it fails we throw the whole
-            // layout away and start a fresh outer attempt rather than shipping a
-            // floor with unreachable rooms.
             connected = CheckConnectivity();
 
-            // Second acceptance gate: reject an otherwise-connected layout that has
-            // no optional space to explore. A straight chain of rooms (every room on
-            // the critical path) makes the key-placement fallback fire and puts the
-            // key directly on the route to the exit — which defeats the exploration
-            // premise on exactly the low floors seed luck tends to produce it. Same
-            // ceiling / ship-anyway behaviour as the connectivity gate: never hang.
             branchingOk = false;
             if (connected)
             {
@@ -326,8 +231,6 @@ public class DungeonGenerator : MonoBehaviour
 
         sw.Stop();
 
-        // Never block the game: if we exhausted the ceiling without a connected
-        // layout, log loudly and ship the last one anyway.
         if (!connected)
         {
             UnityEngine.Debug.LogWarning($"[DungeonGenerator] CONNECTIVITY FAILED — no fully-connected layout after " +
@@ -347,9 +250,6 @@ public class DungeonGenerator : MonoBehaviour
         lastConnected = connected;
         lastGenTimeMicros = sw.ElapsedTicks * 1000000L / Stopwatch.Frequency;
 
-        // Player always spawns in the smallest room on the floor — computed here, once,
-        // so PlayerController and EnemySpawner both read the same room via PlayerSpawnRoom
-        // regardless of which order they handle OnFloorGenerated in.
         int smallestIdx = 0;
         for (int i = 1; i < rooms.Count; i++)
             if (rooms[i].width * rooms[i].height < rooms[smallestIdx].width * rooms[smallestIdx].height)
@@ -357,9 +257,6 @@ public class DungeonGenerator : MonoBehaviour
         spawnRoomIndex = smallestIdx;
         playerSpawnRoom = rooms[smallestIdx];
 
-        // Render each stage only if its tilemap is assigned in the Inspector.
-        // Gameplay builds: assign only tilemapCA, leave tilemapBSP/tilemapRW empty.
-        // Report/debug screenshots: assign all 3 to see each pipeline stage.
         Tilemap[] tilemaps = { tilemapBSP, tilemapRW, tilemapCA };
         int[][,] grids = { gridBSP, gridRW, gridCA };
 
@@ -376,12 +273,6 @@ public class DungeonGenerator : MonoBehaviour
                 }
         }
 
-        // Visual-only directional border overlay on a SEPARATE tilemap above ca. Paints a
-        // mostly-transparent strip on each wall cell touching floor, rotated so the strip
-        // faces the floor side; ca's wall cells underneath stay plain wallTile — never
-        // replaced. Keyed off gridCA (the playable layout), painted once. Reads gridCA
-        // only — never writes it — and runs after generation is finalized, so it cannot
-        // affect grid, rooms, the room graph, or any metric the harness measures.
         if (borderOverlayTilemap != null)
         {
             borderOverlayTilemap.ClearAllTiles();
@@ -389,28 +280,25 @@ public class DungeonGenerator : MonoBehaviour
                 for (int x = 0; x < gridWidth; x++)
                     for (int y = 0; y < gridHeight; y++)
                     {
-                        if (gridCA[x, y] == 0) continue; // wall cells only
+                        if (gridCA[x, y] == 0) continue;
                         float angle;
-                        if      (IsFloor(gridCA, x, y + 1)) angle =   0f; // floor above → strip up
-                        else if (IsFloor(gridCA, x, y - 1)) angle = 180f; // floor below
-                        else if (IsFloor(gridCA, x - 1, y)) angle = -90f; // floor left
-                        else if (IsFloor(gridCA, x + 1, y)) angle =  90f; // floor right
-                        // Diagonal fallback: fills concave-notch cells that touch floor only
-                        // at a corner. No flush answer for a straight strip, so bias to the
-                        // vertical orientation matching the orthogonal priority above.
-                        else if (IsFloor(gridCA, x - 1, y + 1)) angle =   0f; // floor up-left
-                        else if (IsFloor(gridCA, x + 1, y + 1)) angle =   0f; // floor up-right
-                        else if (IsFloor(gridCA, x - 1, y - 1)) angle = 180f; // floor down-left
-                        else if (IsFloor(gridCA, x + 1, y - 1)) angle = 180f; // floor down-right
-                        else continue;                                    // no floor neighbor at all
+                        if      (IsFloor(gridCA, x, y + 1)) angle =   0f;
+                        else if (IsFloor(gridCA, x, y - 1)) angle = 180f;
+                        else if (IsFloor(gridCA, x - 1, y)) angle = -90f;
+                        else if (IsFloor(gridCA, x + 1, y)) angle =  90f;
+
+                        else if (IsFloor(gridCA, x - 1, y + 1)) angle =   0f;
+                        else if (IsFloor(gridCA, x + 1, y + 1)) angle =   0f;
+                        else if (IsFloor(gridCA, x - 1, y - 1)) angle = 180f;
+                        else if (IsFloor(gridCA, x + 1, y - 1)) angle = 180f;
+                        else continue;
                         Vector3Int p = new Vector3Int(x, y, 0);
                         borderOverlayTilemap.SetTile(p, borderTile);
-                        borderOverlayTilemap.SetTileFlags(p, TileFlags.None); // required for rotation
+                        borderOverlayTilemap.SetTileFlags(p, TileFlags.None);
                         borderOverlayTilemap.SetTransformMatrix(p, Matrix4x4.Rotate(Quaternion.Euler(0, 0, angle)));
                     }
         }
 
-        // metrics
         int floorCount = 0;
         for (int x = 0; x < gridWidth; x++)
             for (int y = 0; y < gridHeight; y++)
@@ -419,15 +307,9 @@ public class DungeonGenerator : MonoBehaviour
         runCounter++;
         currentFloor = nextFloor;
 
-        // Exit room: whichever room is farthest by actual walkable-path distance from
-        // the player's spawn room, found via BFS over the final grid (same technique
-        // as CheckConnectivity, just tracking distance instead of a visited flag).
         exitRoom = FindFarthestRoom(playerSpawnRoom);
         exitRoomIndex = rooms.IndexOf(exitRoom);
 
-        // Build the room adjacency graph from the FINISHED grid, then choose this
-        // floor's key room and record graph metrics. Done before OnFloorGenerated
-        // fires so KeyManager/PotionSpawner can read RoomGraph and KeyRoomIndex.
         roomGraph = new RoomGraph(grid, gridWidth, gridHeight, rooms, spawnRoomIndex, exitRoomIndex);
         keyRoomIndex = SelectKeyRoom(out bool keyFallback);
         lastRoomsOnCriticalPath = roomGraph.CriticalPath.Count;
@@ -492,7 +374,6 @@ public class DungeonGenerator : MonoBehaviour
             writer.WriteLine($"Last {logs.Count} runs (max 50)");
             writer.WriteLine("--------------------------------\n");
 
-
             foreach (var log in logs)
             {
                 writer.WriteLine(
@@ -536,16 +417,6 @@ public class DungeonGenerator : MonoBehaviour
 #endif
     }
 
-    // Deterministic per-floor topology pick, tiered to introduce layout asymmetry
-    // progressively rather than uniformly from floor 1 (aligned with the difficulty
-    // curve). Rows/Columns force the top splits one way, which on a small floor can
-    // collapse toward a near-linear chain and make the branching gate thrash — so the
-    // banded profiles are held back to later, larger floors. Bands keep more than one
-    // profile so no long run of floors shares an identical layout kind:
-    //   floors 1-15  : {Quad, Organic}                 (early, safe — no forced banding)
-    //   floors 16-24 : {Quad, Organic, Rows}           (asymmetry ramps in near the curve)
-    //   floors 25+   : {Quad, Organic, Rows, Columns}  (full set past the inflection point)
-    // The floor*31+7 hash keeps selection within each band deterministic per floor.
     LayoutProfile ChooseLayoutProfile(int floor)
     {
         LayoutProfile[] band;
@@ -566,8 +437,6 @@ public class DungeonGenerator : MonoBehaviour
 
         bool splitHorizontal = DecideSplitHorizontal(node);
 
-        // Split ratio widened 0.4-0.6 -> 0.3-0.7 so children (and therefore rooms) are
-        // visibly uneven in size rather than near-halved every time.
         if (splitHorizontal)
         {
             int split = Random.Range((int)(node.height * 0.3f), (int)(node.height * 0.7f));
@@ -585,11 +454,6 @@ public class DungeonGenerator : MonoBehaviour
         SplitNode(node.right);
     }
 
-    // Chooses split direction (true = horizontal) for the active profile. A node is only
-    // split in a direction whose dimension is large enough to yield two carveable children;
-    // if the profile's preferred direction isn't viable, the only viable one is used so a
-    // forced profile never produces slivers. The SplitNode entry guard guarantees at least
-    // one direction is viable here.
     bool DecideSplitHorizontal(BSPNode node)
     {
         bool canHorizontal = node.height >= minNodeSize * 2;
@@ -600,21 +464,19 @@ public class DungeonGenerator : MonoBehaviour
         switch (currentProfile)
         {
             case LayoutProfile.Rows:
-                // Stacked bands: force the top splits horizontal, then let bands subdivide.
+
                 return node.depth < FORCED_SPLIT_DEPTH ? true : AspectBiasedHorizontal(node);
             case LayoutProfile.Columns:
-                // Tall strips: force the top splits vertical, then let strips subdivide.
+
                 return node.depth < FORCED_SPLIT_DEPTH ? false : AspectBiasedHorizontal(node);
             case LayoutProfile.Quad:
-                // Strict alternation by depth -> grid-like cells.
+
                 return (node.depth % 2) == 0;
-            default: // Organic
+            default:
                 return AspectBiasedHorizontal(node);
         }
     }
 
-    // Original behaviour: random direction with a 1.5x aspect bias so very elongated
-    // nodes split across their long axis.
     bool AspectBiasedHorizontal(BSPNode node)
     {
         bool splitHorizontal = Random.value > 0.5f;
@@ -629,10 +491,7 @@ public class DungeonGenerator : MonoBehaviour
     {
         if (node.left == null && node.right == null)
         {
-            // Each room independently fills 55-100% of its leaf on each axis, so rooms are
-            // visibly asymmetric rather than near-uniform. Clamped to >= minRoomSize and to
-            // the leaf interior; Unity's int Random.Range returns min when min >= max, so a
-            // degenerate tiny leaf can't throw.
+
             int maxW = Mathf.Max(minRoomSize, node.width - 2);
             int maxH = Mathf.Max(minRoomSize, node.height - 2);
             int roomW = Mathf.Clamp((int)(node.width * Random.Range(0.55f, 1.0f)), minRoomSize, maxW);
@@ -741,8 +600,6 @@ public class DungeonGenerator : MonoBehaviour
         ConnectAllRooms(node.right);
     }
 
-    // True only if (x,y) is a real floor cell (grid value 0) inside the grid. Off-grid
-    // returns false so wall cells facing outside the map into nothing are not bordered.
     bool IsFloor(int[,] g, int x, int y)
     {
         if (x < 0 || x >= gridWidth || y < 0 || y >= gridHeight) return false;
@@ -832,13 +689,6 @@ public class DungeonGenerator : MonoBehaviour
         return true;
     }
 
-    // BFS distance flood-fill from the centre of startRoom, then returns whichever
-    // room's centre has the largest distance. Same traversal pattern as
-    // CheckConnectivity, but records a distance per tile instead of just visited/not.
-    // Off-path (optional) room count for the CURRENT grid/rooms, used as the branching
-    // acceptance gate inside the generation loop. Deliberately mirrors the post-loop
-    // spawn/exit/graph computation exactly — smallest room = spawn, farthest = exit —
-    // so the gate's decision and the shipped RoomsOffPath metric can never disagree.
     int CountOffPathRooms()
     {
         if (rooms.Count == 0) return 0;
@@ -895,7 +745,7 @@ public class DungeonGenerator : MonoBehaviour
         {
             if (room.x == startRoom.x && room.y == startRoom.y
                 && room.width == startRoom.width && room.height == startRoom.height)
-                continue; // skip the spawn room itself
+                continue;
 
             int cx = Mathf.Clamp(room.x + room.width / 2, 0, gridWidth - 1);
             int cy = Mathf.Clamp(room.y + room.height / 2, 0, gridHeight - 1);
@@ -910,11 +760,6 @@ public class DungeonGenerator : MonoBehaviour
         return farthest;
     }
 
-    // Picks the floor's key room from the room graph: among rooms NOT on the critical
-    // path, the one farthest from spawn, tie-broken toward dead ends (lowest degree).
-    // If every room is on the critical path, falls back to the deepest room that is
-    // neither spawn nor exit and reports it via fallbackUsed. Returns -1 only when no
-    // room qualifies at all (e.g. a floor of just the spawn and exit rooms).
     int SelectKeyRoom(out bool fallbackUsed)
     {
         fallbackUsed = false;
@@ -925,7 +770,7 @@ public class DungeonGenerator : MonoBehaviour
         {
             if (roomGraph.IsOnCriticalPath(i)) continue;
             int d = roomGraph.DistanceFromSpawn(i);
-            if (d < 0) continue; // unreachable — shouldn't happen once connectivity is enforced
+            if (d < 0) continue;
             int deg = roomGraph.Degree(i);
             if (d > bestDist || (d == bestDist && deg < bestDegree))
             {
@@ -934,7 +779,6 @@ public class DungeonGenerator : MonoBehaviour
         }
         if (best != -1) return best;
 
-        // Fallback: no off-path rooms exist. Deepest room that isn't spawn or exit.
         fallbackUsed = true;
         for (int i = 0; i < rooms.Count; i++)
         {
@@ -950,7 +794,7 @@ public class DungeonGenerator : MonoBehaviour
 public class BSPNode
 {
     public int x, y, width, height;
-    public int depth;              // split depth from the root (root = 0); drives per-profile split direction
+    public int depth;
     public BSPNode left, right;
     public RectInt room;
 
@@ -963,8 +807,4 @@ public class BSPNode
     }
 }
 
-// Per-floor BSP topology. Chosen once per floor (see ChooseLayoutProfile) so floors
-// differ in KIND, not just in seed arrangement. Rows/Columns force the top splits one
-// way to produce banded/striped layouts; Quad alternates for a grid; Organic is the
-// original aspect-biased random.
 public enum LayoutProfile { Rows, Columns, Quad, Organic }

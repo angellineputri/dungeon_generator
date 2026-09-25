@@ -1,14 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// Top-right minimap built from FogOfWar's explored array — shows only tiles the
-/// player has actually walked through, not the full generated layout. A floor
-/// number label sits directly beneath it, grouping the two "meta info" elements
-/// together and leaving the bottom of the screen entirely clear for gameplay.
-/// Built entirely at runtime, same "no manual Editor setup" pattern as
-/// PlayerStatusUI, ExitMarker, and PotionPickup.
-/// </summary>
 public class MinimapUI : MonoBehaviour
 {
     [Header("References")]
@@ -42,8 +34,7 @@ public class MinimapUI : MonoBehaviour
 
     void BuildUI()
     {
-        // Border + backdrop behind the minimap so it reads as a bounded widget
-        // rather than a loose blob of pixels floating in empty space.
+
         GameObject border = new GameObject("Minimap_Border", typeof(RectTransform), typeof(Image));
         border.transform.SetParent(canvas.transform, false);
         RectTransform borderRT = border.GetComponent<RectTransform>();
@@ -80,15 +71,13 @@ public class MinimapUI : MonoBehaviour
         RawImage rawImage = go.GetComponent<RawImage>();
 
         mapTex = new Texture2D(dungeon.GridWidth, dungeon.GridHeight, TextureFormat.RGBA32, false);
-        mapTex.filterMode = FilterMode.Point; // crisp pixel look, no blur on scale-up
+        mapTex.filterMode = FilterMode.Point;
         ClearTexture();
         rawImage.texture = mapTex;
 
         BuildFloorLabel();
     }
 
-    // Small bordered label directly beneath the minimap — same width, same visual
-    // language (dark backdrop, thin border) so the two read as one grouped widget.
     void BuildFloorLabel()
     {
         float labelHeight = 24f;

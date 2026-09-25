@@ -2,12 +2,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
 
-/// <summary>
-/// Places 1-2 permanent upgrade pickups per floor, ONLY in off-critical-path rooms,
-/// weighted toward greater DistanceFromSpawn (via RoomGraph) — so the reward for
-/// leaving the direct route to the exit scales with how far off it you go. Mirrors
-/// PotionSpawner for spawning and KeyManager for self-collection.
-/// </summary>
 public class UpgradeSpawner : MonoBehaviour
 {
     [Header("References (auto-found if empty)")]
@@ -21,8 +15,8 @@ public class UpgradeSpawner : MonoBehaviour
     public int maxPerFloor = 2;
 
     [Header("Upgrade amounts")]
-    public float powerAmount = 2f;      // +attackDamage
-    public float vitalityAmount = 20f;  // +maxHealth (never currentHealth)
+    public float powerAmount = 2f;
+    public float vitalityAmount = 20f;
 
     [Header("Feedback")]
     public float messageDuration = 2f;
@@ -32,7 +26,6 @@ public class UpgradeSpawner : MonoBehaviour
     private PlayerHealth ph;
     private float messageClearTime;
 
-    // Read by RunSummary (Build B only). Persists across floors for the whole run.
     public int UpgradesCollected { get; private set; }
 
     void OnEnable()
@@ -77,9 +70,6 @@ public class UpgradeSpawner : MonoBehaviour
         RoomGraph graph = dungeon.RoomGraph;
         int spawnIdx = dungeon.PlayerSpawnRoomIndex;
 
-        // Off-critical-path rooms only, weighted by distance from spawn. Fall back to
-        // any non-spawn room (still distance-weighted) if the layout has no off-path
-        // rooms this floor, so an upgrade still appears.
         List<int> eligible = new List<int>();
         List<float> weights = new List<float>();
         float total = 0f;
@@ -110,9 +100,6 @@ public class UpgradeSpawner : MonoBehaviour
                 Random.Range(room.y, room.y + room.height)
             );
 
-            // Alternate Power / Vitality across this floor's spawns (i) so a
-            // two-upgrade floor reliably offers one of each; UpgradesCollected shifts
-            // which type comes first from floor to floor.
             bool power = (UpgradesCollected + i) % 2 == 0;
 
             GameObject obj = new GameObject(power ? "Upgrade_Power" : "Upgrade_Vitality");

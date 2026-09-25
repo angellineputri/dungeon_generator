@@ -1,14 +1,6 @@
 using UnityEngine;
 using TMPro;
 
-/// <summary>
-/// Simple mana pool that gates attacks. Regenerates passively, doesn't reset on
-/// floor change (same philosophy as PlayerHealth — a fresh full pool every floor
-/// would make the resource meaningless). Combined with attackCooldown, this is
-/// what turns fighting a stacked room (3-4 enemies at high floors) into a real
-/// decision — you can burst a few hits, but sustained fighting drains you faster
-/// than you regen, forcing a retreat rather than standing and holding F.
-/// </summary>
 public class PlayerMana : MonoBehaviour
 {
     [Header("Mana")]
@@ -35,8 +27,6 @@ public class PlayerMana : MonoBehaviour
         }
     }
 
-    // Returns false without spending anything if there isn't enough mana —
-    // caller (PlayerController.Attack) treats a false return as a fizzled swing.
     public bool TrySpend(float amount)
     {
         if (currentMana < amount) return false;

@@ -1,12 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// Builds a grouped HP/mana HUD panel in the bottom-left corner at runtime — one
-/// bordered background panel containing both bars with small color-coded icon
-/// squares, rather than two bare floating rectangles. No manual Canvas/Image setup
-/// needed in the Editor, same "build it in code" approach as ExitMarker/PotionPickup.
-/// </summary>
 public class PlayerStatusUI : MonoBehaviour
 {
     [Header("References")]
@@ -42,9 +36,8 @@ public class PlayerStatusUI : MonoBehaviour
 
     void BuildPanel()
     {
-        // Single bordered backdrop grouping both bars, so they read as one HUD
-        // widget instead of two unrelated rectangles floating in space.
-        float panelW = barSize.x + panelPadding * 2f + 22f; // +22 for the icon column
+
+        float panelW = barSize.x + panelPadding * 2f + 22f;
         float panelH = barSpacing * 2f + panelPadding * 1.5f;
 
         GameObject panel = new GameObject("StatusPanel", typeof(RectTransform), typeof(Image));
@@ -59,7 +52,6 @@ public class PlayerStatusUI : MonoBehaviour
         panelImg.sprite = BuildSolidSprite();
         panelImg.color = new Color(0.05f, 0.05f, 0.06f, 0.72f);
 
-        // Thin border via a slightly larger dark rect behind the panel.
         GameObject border = new GameObject("StatusPanel_Border", typeof(RectTransform), typeof(Image));
         border.transform.SetParent(canvas.transform, false);
         border.transform.SetSiblingIndex(panel.transform.GetSiblingIndex());
@@ -114,8 +106,6 @@ public class PlayerStatusUI : MonoBehaviour
         return fillImg;
     }
 
-    // Small color-coded square to the left of each bar — cheap stand-in for a real
-    // heart/droplet icon, at least visually distinguishes HP from mana at a glance.
     void BuildIcon(Transform parent, Vector2 anchoredPos, Color color)
     {
         GameObject icon = new GameObject("Icon", typeof(RectTransform), typeof(Image));

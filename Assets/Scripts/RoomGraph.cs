@@ -1,27 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// Room adjacency derived from the FINISHED tile grid (post-BSP, post-corridors,
-/// post-CA), NOT from the BSP tree. The BSP tree is thrown away by the time this
-/// runs — corridors and CA smoothing can merge or pinch rooms in ways the tree no
-/// longer describes, so adjacency is measured on the tiles that actually exist.
-///
-/// Rooms keep the identity they have everywhere else in the project: their index in
-/// DungeonGenerator.Rooms. This class stores no room geometry and does not touch the
-/// List&lt;RectInt&gt; — it only produces graph facts keyed by that index.
-///
-/// Pipeline:
-///   1. Region labelling by multi-source BFS. Every walkable tile inside a room is
-///      seeded with that room's index (all seeds at distance 0), then the frontier
-///      expands over walkable tiles only. Because it's a single FIFO BFS from all
-///      seeds at once, each tile ends up owned by its NEAREST room, and a corridor
-///      running between two rooms is split down the middle where the frontiers meet.
-///   2. Adjacency: rooms i and j are neighbours iff some tile labelled i is
-///      4-adjacent to some tile labelled j.
-///   3. Graph BFS from the spawn room gives DistanceFromSpawn; the parent pointers
-///      reconstruct the critical path (spawn -> exit); degree is neighbour count.
-/// </summary>
 public class RoomGraph
 {
     private readonly int roomCount;
@@ -35,7 +14,6 @@ public class RoomGraph
     public int ExitIndex { get; }
     public int RoomCount => roomCount;
 
-    /// <summary>Ordered room sequence from the spawn room to the exit room inclusive.</summary>
     public IReadOnlyList<int> CriticalPath => criticalPath;
 
     public RoomGraph(int[,] grid, int width, int height, List<RectInt> rooms, int spawnIndex, int exitIndex)
@@ -55,8 +33,6 @@ public class RoomGraph
         ComputeDistancesAndPath(spawnIndex, exitIndex);
     }
 
-    // --- Public API (room index in, graph fact out) ---
-
     public IReadOnlyList<int> Neighbours(int i) =>
         (i >= 0 && i < roomCount) ? adjacency[i] : System.Array.Empty<int>();
 
@@ -69,8 +45,6 @@ public class RoomGraph
     public int Degree(int i) =>
         (i >= 0 && i < roomCount) ? degree[i] : 0;
 
-    // --- Stage 1: multi-source BFS region labelling ---
-
     int[,] LabelRegions(int[,] grid, int width, int height, List<RectInt> rooms)
     {
         int[,] label = new int[width, height];
@@ -80,9 +54,6 @@ public class RoomGraph
 
         Queue<Vector2Int> queue = new Queue<Vector2Int>();
 
-        // Seed every walkable tile inside every room with that room's index. All
-        // seeds go in at "distance 0" before any expansion, which is what makes the
-        // single shared BFS resolve each later tile to its nearest room.
         for (int i = 0; i < rooms.Count; i++)
         {
             RectInt r = rooms[i];
@@ -90,8 +61,8 @@ public class RoomGraph
                 for (int y = r.yMin; y < r.yMax; y++)
                 {
                     if (x < 0 || x >= width || y < 0 || y >= height) continue;
-                    if (grid[x, y] != 0) continue;       // walkable only
-                    if (label[x, y] != -1) continue;      // don't re-seed an overlap
+                    if (grid[x, y] != 0) continue;
+                    if (label[x, y] != -1) continue;
                     label[x, y] = i;
                     queue.Enqueue(new Vector2Int(x, y));
                 }
@@ -119,8 +90,6 @@ public class RoomGraph
         return label;
     }
 
-    // --- Stage 2: adjacency from 4-adjacent differing labels ---
-
     void BuildAdjacency(int[,] grid, int width, int height, int[,] label)
     {
         int[] dx = { 0, 0, 1, -1 };
@@ -142,16 +111,12 @@ public class RoomGraph
                     int b = label[nx, ny];
                     if (b < 0 || b == a) continue;
 
-                    // roomCount is tiny (<= ~18), so a Contains check to dedupe is
-                    // cheaper and clearer than maintaining a pair hash set.
                     if (!adjacency[a].Contains(b)) adjacency[a].Add(b);
                 }
             }
 
         for (int i = 0; i < roomCount; i++) degree[i] = adjacency[i].Count;
     }
-
-    // --- Stage 3: BFS distances + critical path reconstruction ---
 
     void ComputeDistancesAndPath(int spawnIndex, int exitIndex)
     {
@@ -177,7 +142,6 @@ public class RoomGraph
             }
         }
 
-        // Critical path = spawn -> exit walked back through parent pointers.
         criticalPath.Clear();
         if (exitIndex >= 0 && exitIndex < roomCount && distanceFromSpawn[exitIndex] != -1)
         {
@@ -194,8 +158,7 @@ public class RoomGraph
         }
         else
         {
-            // Exit unreachable or same as spawn (e.g. a degenerate single-room floor):
-            // the path is just the spawn room.
+
             criticalPath.Add(spawnIndex);
         }
 

@@ -1,11 +1,5 @@
 using UnityEngine;
 
-/// <summary>
-/// A single health potion. Heals the player and destroys itself on contact.
-/// Distance-checked from PlayerController each frame (matching the exit-marker
-/// trigger pattern already used in this project) rather than Unity physics
-/// triggers, since nothing else in the project uses colliders either.
-/// </summary>
 public class PotionPickup : MonoBehaviour
 {
     public float healAmount = 25f;
@@ -20,14 +14,11 @@ public class PotionPickup : MonoBehaviour
             sr = gameObject.AddComponent<SpriteRenderer>();
 
         sr.sprite = BuildCircleSprite();
-        sr.color = new Color(0.3f, 1f, 0.4f); // green
+        sr.color = new Color(0.3f, 1f, 0.4f);
         sr.sortingOrder = 5;
         transform.localScale = Vector3.one * 0.4f;
     }
 
-    // Called by PlayerController each frame. Heals playerHealth and destroys itself
-    // if within pickupRadius; returns true when collected so the caller can stop
-    // checking this instance further.
     public bool TryCollect(Vector3 playerWorldPos, PlayerHealth playerHealth)
     {
         if (Vector3.Distance(transform.position, playerWorldPos) > pickupRadius)
