@@ -20,6 +20,10 @@ public class DungeonGenerator : MonoBehaviour
     [Header("CA Settings")]
     public int caIterations = 3;
 
+    [Header("Dev")]
+    [Tooltip("When on, SPACE regenerates the current floor. Leave OFF for tester/playtest builds so a stray Space press can't scramble a run.")]
+    public bool devHotkeys = false;
+
     [Header("Tilemaps - assign only what you need")]
     [Tooltip("Leave empty in gameplay builds. Assign for report/debug screenshots of each pipeline stage.")]
     public Tilemap tilemapBSP;
@@ -145,7 +149,7 @@ public class DungeonGenerator : MonoBehaviour
 
     void Update()
     {
-        if (Keyboard.current.spaceKey.wasPressedThisFrame)
+        if (devHotkeys && Keyboard.current.spaceKey.wasPressedThisFrame)
             Generate();
     }
 

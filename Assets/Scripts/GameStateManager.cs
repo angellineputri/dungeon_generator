@@ -140,8 +140,10 @@ public class GameStateManager : MonoBehaviour
         if (visible && telemetry != null)
         {
             string body = telemetry.SessionSummary;
-            overlayText.text = "SESSION LOG  (press T to hide)\n\n" +
+            overlayText.text = "SESSION LOG  (press T to hide — copied to clipboard, paste into the form)\n\n" +
                                (string.IsNullOrWhiteSpace(body) ? "(no floors recorded yet)" : body);
+            if (!string.IsNullOrWhiteSpace(body))
+                GUIUtility.systemCopyBuffer = body;
         }
         overlayPanel.SetActive(visible);
     }
