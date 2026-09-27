@@ -790,6 +790,15 @@ MonoBehaviour:
   dungeon: {fileID: 0}
   playerHealth: {fileID: 0}
   telemetry: {fileID: 0}
+  progression: {fileID: 0}
+  playerMana: {fileID: 0}
+  fog: {fileID: 0}
+  panelSprite: {fileID: 21300000, guid: 48b16457f68b44d1a8fabb36363db8d1, type: 3}
+  buttonSprite: {fileID: 21300000, guid: dba53c245e95c4148a72206e101d953b, type: 3}
+  buttonPressedSprite: {fileID: 21300000, guid: c61061ab1ebd84ccbacab42e9af05616, type: 3}
+  starSprite: {fileID: 21300000, guid: 60db59d0ee0ed474fab509e36c36ad9a, type: 3}
+  titleFont: {fileID: 11400000, guid: 7be2cad0314be4d2eb1a7516a754c8f7, type: 2}
+  bodyFont: {fileID: 11400000, guid: 90de268291f9144ea99fb56dec932d2f, type: 2}
   gameTitle: DUNGEON
 --- !u!1 &800000210
 GameObject:
@@ -801,6 +810,7 @@ GameObject:
   m_Component:
   - component: {fileID: 800000211}
   - component: {fileID: 800000212}
+  - component: {fileID: 800000213}
   m_Layer: 0
   m_Name: SessionTelemetry
   m_TagString: Untagged
@@ -838,6 +848,25 @@ MonoBehaviour:
   dungeon: {fileID: 0}
   fog: {fileID: 0}
   playerHealth: {fileID: 0}
+--- !u!114 &800000213
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 800000210}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4a5ba0b8567044444b23035cba4fac2b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LevelProgression
+  telemetry: {fileID: 0}
+  playerHealth: {fileID: 0}
+  player: {fileID: 0}
+  goldMaxLossPct: 0.15
+  silverMaxLossPct: 0.5
+  floorCap: 25
+  CurrentModeKey: Hard
 --- !u!1 &800000220
 GameObject:
   m_ObjectHideFlags: 0
@@ -1174,6 +1203,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
   dungeon: {fileID: 1444066787}
   keyManager: {fileID: 800000102}
+  gameState: {fileID: 0}
   moveSpeed: 7
   collisionRadius: 0.2
   collisionYShift: 0.7
@@ -1214,7 +1244,7 @@ MonoBehaviour:
   playerHealth: {fileID: 0}
   playerMana: {fileID: 0}
   barSize: {x: 200, y: 20}
-  topLeftOffset: {x: 16, y: -16}
+  topLeftOffset: {x: 100, y: -16}
   barSpacing: 28
   panelPadding: 12
 --- !u!114 &1220888558
@@ -1529,6 +1559,7 @@ MonoBehaviour:
   gridHeight: 80
   minRoomSize: 8
   caIterations: 3
+  devHotkeys: 0
   tilemapBSP: {fileID: 0}
   tilemapRW: {fileID: 0}
   tilemapCA: {fileID: 1026769871}
@@ -1616,7 +1647,7 @@ TilemapRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1481428989}
-  m_Enabled: 0
+  m_Enabled: 1
   m_CastShadows: 0
   m_ReceiveShadows: 0
   m_DynamicOccludee: 1

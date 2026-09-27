@@ -1,0 +1,251 @@
+using System.Collections;
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public class PlayerController : MonoBehaviour
+{
+    [Header("References")]
+    public DungeonGenerator dungeon;
+    [Tooltip("Optional — if assigned, the exit stays locked until the floor's key is collected.")]
+    public KeyManager keyManager;
+    public GameStateManager gameState;
+
+    [Header("Movement")]
+    public float moveSpeed = 5f;
+    public float collisionRadius = 0.2f;
+    [Tooltip("Shifts wall-collision sampling vertically (world units). Positive nudges the player's resting position UP against walls — shrinks the gap when hitting a wall above and transfers overlap from the bottom to the top. Tune by eye in Play mode. Collision only; does not move the sprite.")]
+    public float collisionYShift = 0.7f;
+    [Tooltip("Shifts wall-collision sampling horizontally (world units). Mirror of collisionYShift for left/right — positive nudges the player's resting position one way against side walls. Default 0; fill in by eye in Play mode. Collision only; does not move the sprite.")]
+    public float collisionXShift = 0f;
+
+    [Header("Exit Trigger")]
+    [Tooltip("How close (in tiles) the player must be to the exit marker's exact position to advance, rather than anywhere in the exit room.")]
+    public float exitTriggerRadius = 1f;
+
+    [Header("Combat")]
+    [Tooltip("Press F to attack. Deals damage to any enemy within attackRange.")]
+    public float attackDamage = 15f;
+    public float attackRange = 2.2f;
+    public float attackCooldown = 0.9f;
+    [Tooltip("Mana spent per attack. Fizzles (no damage, cooldown still applies) if you don't have enough.")]
+    public float manaCost = 25f;
+    private float attackCooldownTimer;
+
+    void OnEnable()
+    {
+        if (dungeon != null)
+            dungeon.OnFloorGenerated += RespawnAtValidPosition;
+    }
+
+    void OnDisable()
+    {
+        if (dungeon != null)
+            dungeon.OnFloorGenerated -= RespawnAtValidPosition;
+    }
+
+    void Start()
+    {
+        if (gameState == null) gameState = FindFirstObjectByType<GameStateManager>();
+
+        if (dungeon != null && dungeon.CurrentFloor > 0)
+            RespawnAtValidPosition();
+        else
+            StartCoroutine(WaitForFirstFloor());
+    }
+
+    IEnumerator WaitForFirstFloor()
+    {
+        yield return null;
+        while (dungeon.Rooms == null || dungeon.Rooms.Count == 0)
+            yield return null;
+        RespawnAtValidPosition();
+    }
+
+    void RespawnAtValidPosition()
+    {
+        if (dungeon.Rooms == null || dungeon.Rooms.Count == 0) return;
+
+        RectInt room = dungeon.PlayerSpawnRoom;
+        Vector2Int center = new Vector2Int(
+            room.x + room.width / 2,
+            room.y + room.height / 2
+        );
+
+        transform.position = dungeon.tilemapCA.transform.position + new Vector3(center.x, center.y, 0f);
+    }
+
+    void Update()
+    {
+        if (Time.timeScale == 0f) return;
+
+        Vector2 input = Vector2.zero;
+
+        if (Keyboard.current.wKey.isPressed) input.y += 1;
+        if (Keyboard.current.sKey.isPressed) input.y -= 1;
+        if (Keyboard.current.aKey.isPressed) input.x -= 1;
+        if (Keyboard.current.dKey.isPressed) input.x += 1;
+
+        input = input.normalized;
+        Vector3 moveDelta = (Vector3)input * moveSpeed * Time.deltaTime;
+
+        Vector3 nextX = transform.position + new Vector3(moveDelta.x, 0f, 0f);
+        if (IsPositionWalkable(nextX))
+            transform.position = nextX;
+
+        Vector3 nextY = transform.position + new Vector3(0f, moveDelta.y, 0f);
+        if (IsPositionWalkable(nextY))
+            transform.position = nextY;
+
+        CheckExitReached();
+        CheckPotionPickups();
+        HandleAttackInput();
+    }
+
+    void HandleAttackInput()
+    {
+        attackCooldownTimer -= Time.deltaTime;
+
+        if (Keyboard.current.spaceKey.wasPressedThisFrame)
+            AttemptedAttackThisFloor = true;
+
+        if (Keyboard.current.spaceKey.wasPressedThisFrame && attackCooldownTimer <= 0f)
+        {
+            Attack();
+            attackCooldownTimer = attackCooldown;
+        }
+    }
+
+    public event System.Action OnAttack;
+
+    public bool AttemptedAttackThisFloor { get; private set; }
+    public void ResetAttackAttempt() => AttemptedAttackThisFloor = false;
+
+    void Attack()
+    {
+        PlayerMana mana = GetComponent<PlayerMana>();
+        if (mana != null && !mana.TrySpend(manaCost))
+        {
+            ShowAttackEffect(false, outOfMana: true);
+            return;
+        }
+
+        OnAttack?.Invoke();
+
+        EnemyAI[] enemies = FindObjectsByType<EnemyAI>(FindObjectsSortMode.None);
+        bool hitAnything = false;
+
+        foreach (var enemy in enemies)
+        {
+            if (Vector3.Distance(transform.position, enemy.transform.position) <= attackRange)
+            {
+                enemy.TakeDamage(attackDamage);
+                hitAnything = true;
+            }
+        }
+
+        ShowAttackEffect(hitAnything, outOfMana: false);
+    }
+
+    void ShowAttackEffect(bool hit, bool outOfMana)
+    {
+        GameObject fx = new GameObject("AttackSwing");
+        fx.transform.position = transform.position;
+
+        SpriteRenderer sr = fx.AddComponent<SpriteRenderer>();
+        sr.sprite = BuildRingSprite();
+        if (outOfMana)
+            sr.color = new Color(0.4f, 0.4f, 0.7f, 0.4f);
+        else
+            sr.color = hit ? new Color(1f, 0.9f, 0.3f) : new Color(0.8f, 0.8f, 0.8f, 0.6f);
+        sr.sortingOrder = 15;
+        fx.transform.localScale = Vector3.one * attackRange * 2f;
+
+        Destroy(fx, 0.12f);
+    }
+
+    Sprite BuildRingSprite()
+    {
+        int size = 48;
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        Vector2 c = new Vector2(size / 2f, size / 2f);
+        float outerR = size / 2f - 2f;
+        float innerR = outerR - 5f;
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float d = Vector2.Distance(new Vector2(x, y), c);
+                bool inRing = d <= outerR && d >= innerR;
+                tex.SetPixel(x, y, inRing ? Color.white : new Color(0, 0, 0, 0));
+            }
+        }
+        tex.Apply();
+
+        return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
+    }
+
+    void CheckExitReached()
+    {
+        RectInt exit = dungeon.ExitRoom;
+        Vector2Int center = new Vector2Int(
+            exit.x + exit.width / 2,
+            exit.y + exit.height / 2
+        );
+        Vector3 exitWorldPos = dungeon.tilemapCA.transform.position + new Vector3(center.x, center.y, 0f);
+
+        if (Vector3.Distance(transform.position, exitWorldPos) <= exitTriggerRadius)
+        {
+
+            if (keyManager != null && !keyManager.HasKey)
+            {
+                keyManager.NotifyLockedExit();
+                return;
+            }
+            if (gameState != null)
+                gameState.NotifyFloorCleared();
+            else
+                dungeon.AdvanceToNextFloor();
+        }
+    }
+
+    void CheckPotionPickups()
+    {
+        PlayerHealth health = GetComponent<PlayerHealth>();
+
+        PotionPickup[] potions = FindObjectsByType<PotionPickup>(FindObjectsSortMode.None);
+        foreach (var potion in potions)
+            potion.TryCollect(transform.position, health);
+    }
+
+    bool IsPositionWalkable(Vector3 worldPos)
+    {
+        Vector3 local = worldPos - dungeon.tilemapCA.transform.position;
+        local.x -= collisionXShift;
+        local.y -= collisionYShift;
+
+        Vector2[] checkOffsets =
+        {
+            new Vector2(0, 0),
+            new Vector2(collisionRadius, 0),
+            new Vector2(-collisionRadius, 0),
+            new Vector2(0, collisionRadius),
+            new Vector2(0, -collisionRadius),
+
+            new Vector2(collisionRadius, collisionRadius),
+            new Vector2(-collisionRadius, collisionRadius),
+            new Vector2(collisionRadius, -collisionRadius),
+            new Vector2(-collisionRadius, -collisionRadius)
+        };
+
+        foreach (var offset in checkOffsets)
+        {
+            int gx = Mathf.RoundToInt(local.x + offset.x);
+            int gy = Mathf.RoundToInt(local.y + offset.y);
+            if (!dungeon.IsWalkable(gx, gy))
+                return false;
+        }
+
+        return true;
+    }
+}

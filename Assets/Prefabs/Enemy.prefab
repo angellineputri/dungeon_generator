@@ -112,9 +112,11 @@ MonoBehaviour:
   leashMargin: 3
   minRecalcInterval: 0.12
   pathRecalcInterval: 0.4
-  moveSpeed: 3
+  moveSpeed: 5
   patrolSpeedMultiplier: 0.5
   closeRangeDistance: 2
+  stopDistance: 0.6
   collisionRadius: 0.15
   baseHP: 20
   baseDamage: 5
+  damageTickInterval: 1
