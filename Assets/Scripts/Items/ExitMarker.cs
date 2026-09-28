@@ -6,9 +6,10 @@ public class ExitMarker : MonoBehaviour
     public DungeonGenerator dungeon;
 
     [Header("Appearance")]
-    public Color markerColor = new Color(1f, 0.85f, 0.2f);
+    [Tooltip("Tint applied ONLY when you assign your own markerSprite below. The generated portal oval is already coloured in code.")]
+    public Color markerColor = new Color(0.09f, 0.106f, 0.157f, 1f);
     public float markerScale = 0.6f;
-    [Tooltip("Optional — assign your own sprite here to skip the generated placeholder circle.")]
+    [Tooltip("Optional — assign your own sprite here to replace the generated portal oval.")]
     public Sprite markerSprite;
 
     private SpriteRenderer sr;
@@ -19,8 +20,9 @@ public class ExitMarker : MonoBehaviour
         if (sr == null)
             sr = gameObject.AddComponent<SpriteRenderer>();
 
-        sr.sprite = markerSprite != null ? markerSprite : BuildCircleSprite();
-        sr.color = markerColor;
+        bool custom = markerSprite != null;
+        sr.sprite = custom ? markerSprite : BuildPortalOvalSprite();
+        sr.color = custom ? markerColor : Color.white;
         sr.sortingOrder = 10;
         transform.localScale = Vector3.one * markerScale;
     }
@@ -56,19 +58,35 @@ public class ExitMarker : MonoBehaviour
         transform.position = dungeon.tilemapCA.transform.position + new Vector3(center.x, center.y, -0.1f);
     }
 
-    Sprite BuildCircleSprite()
+    Sprite BuildPortalOvalSprite()
     {
         int size = 64;
         Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Bilinear;
+
         Vector2 c = new Vector2(size / 2f, size / 2f);
-        float r = size / 2f - 2f;
+        float rx = size * 0.30f;
+        float ry = size * 0.46f;
+
+        Color core  = new Color(0.09f, 0.106f, 0.157f);
+        Color rim   = new Color(0.23f, 0.27f, 0.41f);
+        Color clear = new Color(0f, 0f, 0f, 0f);
 
         for (int y = 0; y < size; y++)
         {
             for (int x = 0; x < size; x++)
             {
-                float d = Vector2.Distance(new Vector2(x, y), c);
-                tex.SetPixel(x, y, d <= r ? Color.white : new Color(0, 0, 0, 0));
+                float nx = (x + 0.5f - c.x) / rx;
+                float ny = (y + 0.5f - c.y) / ry;
+                float d = Mathf.Sqrt(nx * nx + ny * ny);
+
+                if (d > 1f) { tex.SetPixel(x, y, clear); continue; }
+
+                float rimAmount = Mathf.SmoothStep(0f, 1f, (d - 0.6f) / 0.4f);
+                float alpha = Mathf.Clamp01((1f - d) / 0.08f);
+                Color col = Color.Lerp(core, rim, rimAmount);
+                col.a = alpha;
+                tex.SetPixel(x, y, col);
             }
         }
         tex.Apply();

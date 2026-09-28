@@ -77,6 +77,7 @@ public class KeyManager : MonoBehaviour
                 keyPickup = null;
                 keyObj = null;
                 ShowMessage("Key collected — the exit is open.");
+                FloatingText.Show("Key collected", player.position, new Color(1f, 0.85f, 0.2f));
             }
         }
 

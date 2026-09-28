@@ -36,6 +36,12 @@ public class PlayerHealth : MonoBehaviour
         UpdateText();
     }
 
+    public void ResetToFull()
+    {
+        currentHealth = maxHealth;
+        UpdateText();
+    }
+
     public void TakeDamage(float amount)
     {
         currentHealth = Mathf.Max(0f, currentHealth - amount);
@@ -43,7 +49,7 @@ public class PlayerHealth : MonoBehaviour
 
         if (currentHealth <= 0f)
         {
-            Debug.Log("[PlayerHealth] Player died. No game-over flow implemented yet.");
+            Debug.Log("[PlayerHealth] Player died.");
         }
     }
 

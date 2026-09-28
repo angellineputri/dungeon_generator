@@ -27,6 +27,8 @@ public class PotionPickup : MonoBehaviour
         if (playerHealth != null)
             playerHealth.Heal(healAmount);
 
+        FloatingText.Show($"+{healAmount:0} HP", playerWorldPos, new Color(0.4f, 1f, 0.5f));
+
         Destroy(gameObject);
         return true;
     }

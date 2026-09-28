@@ -246,41 +246,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::DecorationLayer
   dungeon: {fileID: 1444066787}
   decorationTilemap: {fileID: 341199595}
-  propSprites:
-  - {fileID: 7642980859614939925, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 3275407576765064038, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 2058049638561703503, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -2746839580606631015, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 5372264662783423788, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -6895716492971166485, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -4894898745955426128, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 2710443080846324409, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -1312994402987499043, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 8575179032478902733, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 6234151420658722001, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 1955328530927145255, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -2925288176213767688, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -3803466081661082397, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 2752588384504392991, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 8284690431070618562, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -3857447443281189028, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -1668014440229517187, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -2035105256428418344, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 7757104150326903795, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 2182464128780118203, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 5940148099811479935, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 2941760180877342075, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -3746574086467807375, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -288929653884091521, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -6556338514710992772, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 4798158037266090706, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -5289736582898160604, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: -5101089530674604138, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 5003201201974135454, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
-  - {fileID: 1001301456868327842, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
+  propSprites: []
   floorCrackSprites: []
-  torchSprite: {fileID: 996638998543384504, guid: ac6099bb983c9416ea8ec9378bdb45c7, type: 3}
-  stairsSprite: {fileID: -174804484191063705, guid: e047eb1645e154c57b18d9be5ee60023, type: 3}
+  torchSprite: {fileID: 0}
+  stairsSprite: {fileID: 0}
   spawnRoomDensity: 0.02
   criticalPathDensity: 0.05
   offPathDensity: 0.14
@@ -848,6 +817,7 @@ MonoBehaviour:
   dungeon: {fileID: 0}
   fog: {fileID: 0}
   playerHealth: {fileID: 0}
+  progression: {fileID: 0}
 --- !u!114 &800000213
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -865,8 +835,9 @@ MonoBehaviour:
   player: {fileID: 0}
   goldMaxLossPct: 0.15
   silverMaxLossPct: 0.5
-  floorCap: 25
+  floorCap: 100
   CurrentModeKey: Hard
+  SuppressSave: 0
 --- !u!1 &800000220
 GameObject:
   m_ObjectHideFlags: 0
@@ -1228,6 +1199,7 @@ MonoBehaviour:
   maxHealth: 100
   dungeon: {fileID: 1444066787}
   healthText: {fileID: 0}
+  gameState: {fileID: 0}
 --- !u!114 &1220888557
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1340,55 +1312,6 @@ MonoBehaviour:
   attackFps: 12
   idleFps: 3
   moveThreshold: 0.05
---- !u!1 &1388655497
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1388655499}
-  - component: {fileID: 1388655498}
-  m_Layer: 0
-  m_Name: FloorButtons
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1388655498
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1388655497}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5802d725ed3ba45e1b1d4a5fbfdd7c00, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::FloorDebugButtons
-  canvas: {fileID: 0}
-  dungeon: {fileID: 1444066787}
-  buttonSize: {x: 100, y: 32}
-  bottomOffset: 16
-  gap: 8
---- !u!4 &1388655499
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1388655497}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 89.80591, y: 0.58258, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1406086517
 GameObject:
   m_ObjectHideFlags: 0
@@ -1565,7 +1488,7 @@ MonoBehaviour:
   tilemapCA: {fileID: 1026769871}
   floorTile: {fileID: 11400000, guid: 29df607ec498e44ae8c741445d10a11b, type: 2}
   wallTile: {fileID: 11400000, guid: 207985ef7ee524f74a0915311314d301, type: 2}
-  borderTile: {fileID: 11400000, guid: f1eda1e65130e49b19ccf88ea4041708, type: 2}
+  borderTile: {fileID: 0}
   borderOverlayTilemap: {fileID: 357220069}
   metricsText: {fileID: 1406086519}
 --- !u!4 &1444066788
@@ -2177,7 +2100,6 @@ SceneRoots:
   - {fileID: 567172762}
   - {fileID: 402147642}
   - {fileID: 1928850705}
-  - {fileID: 1388655499}
   - {fileID: 669709542}
   - {fileID: 800000101}
   - {fileID: 800000211}

@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 5171565260274587229}
   - component: {fileID: 381099326147474908}
   - component: {fileID: 593053183266985438}
+  - component: {fileID: 6445877888360891454}
   m_Layer: 0
   m_Name: Enemy
   m_TagString: Untagged
@@ -82,12 +83,12 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 2
   m_MaskInteraction: 0
-  m_Sprite: {fileID: -8182169652497660566, guid: 6e3da7775fafc4cb6aed6d11424f7129, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 7986a05cf2da3429585a7592aef2a038, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
-  m_Size: {x: 1.63, y: 1.58}
+  m_Size: {x: 0.875, y: 0.6875}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
@@ -120,3 +121,19 @@ MonoBehaviour:
   baseHP: 20
   baseDamage: 5
   damageTickInterval: 1
+--- !u!114 &6445877888360891454
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 443489968397297900}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ceac75e206a4442619dbf7cf673b776f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyDirectionalSprite
+  walkLeft: {fileID: 21300000, guid: 79a53a2bab36844b89f335da9238c84e, type: 3}
+  walkRight: {fileID: 21300000, guid: 7986a05cf2da3429585a7592aef2a038, type: 3}
+  moveThreshold: 0.002
+  startFacingRight: 1

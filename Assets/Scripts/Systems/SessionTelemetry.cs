@@ -4,17 +4,13 @@ using System.IO;
 #endif
 using UnityEngine;
 
-// Records one CSV row per floor (explored %, time, damage, heals, outcome) for the
-// playtest study. It only observes — it never changes gameplay. The player presses T
-// to view/copy the log. Practice-mode floors are tagged so they can't be mistaken
-// for real study data.
 public class SessionTelemetry : MonoBehaviour
 {
     [Header("References (auto-found if left empty)")]
     public DungeonGenerator dungeon;
     public FogOfWar fog;
     public PlayerHealth playerHealth;
-    public LevelProgression progression;   // used only to detect Practice mode for tagging
+    public LevelProgression progression;
 
     private const string CsvHeader = "Floor,ExploredPct,SecondsOnFloor,DamageTaken,EffectiveHeals,Outcome";
 
@@ -30,9 +26,6 @@ public class SessionTelemetry : MonoBehaviour
 
     private readonly StringBuilder summary = new StringBuilder();
 
-    // Once any floor is recorded in Practice mode, the whole log is tainted for study
-    // purposes, so SessionSummary (which is what press-T copies to the clipboard) leads
-    // with a loud, impossible-to-miss banner. Individual practice rows are also suffixed.
     private bool sessionHasPractice;
     public string SessionSummary =>
         (sessionHasPractice ? "[PRACTICE - EXCLUDE FROM STUDY]\n" : "") + summary.ToString();
@@ -143,8 +136,6 @@ public class SessionTelemetry : MonoBehaviour
     {
         floorInProgress = false;
 
-        // Tag practice floors in the log only — the outcome passed to OnFloorFinalized
-        // stays clean ("Exit"/"Death") so downstream logic (LevelProgression) is unaffected.
         bool practice = progression != null && progression.CurrentModeKey == "Practice";
         if (practice) sessionHasPractice = true;
         string loggedOutcome = practice ? outcome + "-PRACTICE" : outcome;

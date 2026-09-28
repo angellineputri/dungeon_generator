@@ -1,26 +1,19 @@
 using UnityEngine;
 
-// Central difficulty curve. Given a floor number, it returns all the knobs that
-// make deeper floors harder: tougher/more enemies, faster spawns, smaller rooms,
-// fewer potions. Everything is derived from the floor number so the curve lives
-// in one place. NOTE: these values are tuned/frozen — change them only on purpose.
-
-// The full set of difficulty knobs for a single floor.
 public struct DifficultyParams
 {
-    public float enemyHpMultiplier;      // enemy health scale (1.0 = base)
-    public float enemyDamageMultiplier;  // enemy damage scale (1.0 = base)
-    public int enemyCount;               // how many enemies spawn on the floor
-    public float spawnInterval;          // seconds between enemy spawns (smaller = faster)
-    public int minRoomSize;              // smallest allowed room (smaller = tighter maze)
-    public int caIterations;             // cellular-automata smoothing passes for cave shape
-    public int minNodeSize;              // smallest BSP partition (smaller = more rooms)
-    public int potionCount;              // healing potions placed on the floor
+    public float enemyHpMultiplier;
+    public float enemyDamageMultiplier;
+    public int enemyCount;
+    public float spawnInterval;
+    public int minRoomSize;
+    public int caIterations;
+    public int minNodeSize;
+    public int potionCount;
 }
 
 public static class DifficultyManager
 {
-    // --- Tuning constants (frozen). Each block below controls one knob above. ---
 
     private const float HP_GROWTH_PER_FLOOR = 0.15f;
     private const float DAMAGE_GROWTH_PER_FLOOR = 0.10f;
@@ -49,10 +42,9 @@ public static class DifficultyManager
     private static readonly int[] POTION_COUNT_TIERS = { 3, 2, 1 };
     private const int POTION_TIER_SIZE = 3;
 
-    // Builds the difficulty settings for a given floor (floor 1 = easiest).
     public static DifficultyParams GetDifficultyParams(int floor)
     {
-        floor = Mathf.Max(1, floor);   // guard against floor 0 / negatives
+        floor = Mathf.Max(1, floor);
 
         DifficultyParams p = new DifficultyParams();
 

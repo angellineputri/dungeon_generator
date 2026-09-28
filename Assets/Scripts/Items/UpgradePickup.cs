@@ -36,6 +36,8 @@ public class UpgradePickup : MonoBehaviour
             if (ph != null) ph.IncreaseMaxHealth(amount);
         }
 
+        FloatingText.Show(Label, playerWorldPos, sr.color);
+
         Destroy(gameObject);
         return true;
     }

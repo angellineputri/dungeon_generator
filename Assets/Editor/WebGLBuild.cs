@@ -5,7 +5,7 @@ using UnityEngine;
 public static class WebGLBuild
 {
     const string OutputDir = "Builds/WebGL";
-    static readonly string[] Scenes = { "Assets/Scenes/Main.unity" };
+    static readonly string[] Scenes = { "Assets/Scenes/DungeonGeneratorMain.unity" };
 
     [MenuItem("Build/WebGL Playtest Build")]
     public static void BuildPlaytest()

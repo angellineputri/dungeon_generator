@@ -2,11 +2,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
-// Fog of war: darkens the whole floor, then reveals a circle around the player as
-// they move and remembers where they've been ("explored"). Two independent jobs:
-//   1) tracking which cells are explored (always on — the minimap reads this),
-//   2) drawing the dark overlay (only in Hard mode; toggled via SetFog / renderFog).
-// Painting is done on a separate Tilemap that renders on top of the level art.
 public class FogOfWar : MonoBehaviour
 {
     [Header("References")]
@@ -51,15 +46,11 @@ public class FogOfWar : MonoBehaviour
             ResetFog();
     }
 
-    // When false (Normal mode) the dark overlay is not painted, but explored
-    // tracking keeps running so the minimap still fills in as you move.
     private bool renderFog = true;
 
     public void SetFog(bool on)
     {
         renderFog = on;
-        // Stay enabled in both modes: Update() populates `explored`, which the
-        // minimap reads regardless of whether the overlay is drawn.
         enabled = true;
 
         if (fogTilemap == null) return;
@@ -94,8 +85,6 @@ public class FogOfWar : MonoBehaviour
         lastPlayerGridPos = new Vector2Int(int.MinValue, int.MinValue);
     }
 
-    // Repaints the overlay from the current explored state (used when the fog is
-    // switched on mid-scene). Visible-radius shading is refreshed by Update().
     void RepaintFromExplored()
     {
         if (explored == null) return;
@@ -150,7 +139,6 @@ public class FogOfWar : MonoBehaviour
                 float dist = Vector2.Distance(new Vector2(x, y), new Vector2(center.x, center.y));
                 if (dist > visionRadius) continue;
 
-                // Mark explored in both modes so the minimap fills in.
                 explored[x, y] = true;
                 if (!renderFog) continue;
 

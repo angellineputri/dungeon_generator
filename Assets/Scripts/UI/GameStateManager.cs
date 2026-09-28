@@ -26,13 +26,12 @@ public class GameStateManager : MonoBehaviour
     [Header("Meta")]
     public string gameTitle = "DUNGEON";
 
-    private enum State { MainMenu, Start, Playing, FloorCleared, Progression, Paused, GameOver }
+    private enum State { MainMenu, Start, Playing, FloorCleared, Progression, Paused, GameOver, Complete }
     private State state = State.Start;
 
     public enum Mode { Hard, Normal, Practice }
     private Mode gameMode = Mode.Normal;
 
-    // Practice: testers-only sandbox — every floor unlocked, fog off, nothing saved.
     private bool PracticeMode => gameMode == Mode.Practice;
 
     public string ExtraSummary { get; set; } = "";
@@ -57,7 +56,7 @@ public class GameStateManager : MonoBehaviour
     static readonly Color C_NAVY    = Hex(0x17, 0x1b, 0x28);
     static readonly Color C_BTN     = Hex(0x32, 0x3a, 0x52);
     static readonly Color C_HINT    = Hex(0x6b, 0x73, 0x91);
-    static readonly Color C_PRACTICE = Hex(0x5a, 0x7d, 0xa8);  // steel blue — testers-only mode, visually its own thing
+    static readonly Color C_PRACTICE = Hex(0x5a, 0x7d, 0xa8);
 
     private GameObject startPanel, overlayPanel, howToPlayPanel;
     private TextMeshProUGUI startText, overlayText, modeHint;
@@ -69,8 +68,13 @@ public class GameStateManager : MonoBehaviour
     private Image[] fcStars;
     private Coroutine shimmer;
 
-    private GameObject gameOverPanel, goIcon;
+    private GameObject gameOverPanel;
     private TextMeshProUGUI goStats, goTitle, goFellLine, goFloor;
+
+    private bool endless;
+    public bool IsEndless => endless;
+    private GameObject completePanel;
+    private TextMeshProUGUI completeStats;
 
     private GameObject progressionPanel;
     private Transform progressionGrid;
@@ -144,9 +148,11 @@ public class GameStateManager : MonoBehaviour
     {
         state = State.Start;
         Time.timeScale = 0f;
+        SetEndless(false);
         RefreshModeUI();
         startPanel.SetActive(true);
         gameOverPanel.SetActive(false);
+        completePanel.SetActive(false);
         floorClearedPanel.SetActive(false);
         progressionPanel.SetActive(false);
         pausePanel.SetActive(false);
@@ -175,14 +181,15 @@ public class GameStateManager : MonoBehaviour
 
         int reached = dungeon != null ? dungeon.CurrentFloor : 0;
 
+        if (endless && progression != null) progression.RecordEndlessFloor(reached);
+
         goTitle.text = "YOU DIED";
         goTitle.color = C_ACTIVE;
-        goIcon.SetActive(true);
         goFellLine.gameObject.SetActive(true);
         goFloor.gameObject.SetActive(true);
         goFloor.color = C_TEXT;
         goFloor.text = $"FLOOR {reached}";
-        goStats.text = "Press T for your run log (paste into the form)";
+        goStats.text = "";
         gameOverPanel.SetActive(true);
     }
 
@@ -191,18 +198,28 @@ public class GameStateManager : MonoBehaviour
         StopShimmer();
         floorClearedPanel.SetActive(false);
         gameOverPanel.SetActive(false);
+        completePanel.SetActive(false);
         progressionPanel.SetActive(false);
         pausePanel.SetActive(false);
 
         if (telemetry != null) telemetry.ResetSession();
         if (playerMana != null) playerMana.ResetToFull();
+        if (playerHealth != null) playerHealth.ResetToFull();
 
         state = State.Playing;
         Time.timeScale = 1f;
         ApplyMode();
 
-        int floor = dungeon != null ? dungeon.CurrentFloor : 1;
-        if (dungeon != null) dungeon.JumpToFloor(floor);
+        if (endless)
+        {
+            int start = (progression != null ? progression.floorCap : 100) + 1;
+            EnterEndlessFloor(start);
+        }
+        else
+        {
+            int floor = dungeon != null ? dungeon.CurrentFloor : 1;
+            if (dungeon != null) dungeon.JumpToFloor(floor);
+        }
     }
 
     void GoToMainMenu()
@@ -217,6 +234,12 @@ public class GameStateManager : MonoBehaviour
         if (fog != null) fog.SetFog(gameMode == Mode.Hard);
     }
 
+    void SetEndless(bool on)
+    {
+        endless = on;
+        if (progression != null) progression.SuppressSave = on;
+    }
+
     void SetMode(Mode m)
     {
         gameMode = m;
@@ -225,7 +248,7 @@ public class GameStateManager : MonoBehaviour
         if (state == State.Progression)
         {
             PopulateProgression();
-            StartProgressionPulse();   // re-attach the pulse to the freshly-rebuilt "next" card
+            StartProgressionPulse();
         }
     }
 
@@ -233,9 +256,6 @@ public class GameStateManager : MonoBehaviour
 
     void RefreshModeUI()
     {
-        // Each chip highlights only when its own mode is selected. Hard/Normal use the
-        // red C_ACTIVE highlight; Practice uses its own steel-blue so it reads as a
-        // separate, testers-only thing.
         Color hardCol     = gameMode == Mode.Hard     ? C_ACTIVE   : C_GHOST;
         Color normalCol   = gameMode == Mode.Normal   ? C_ACTIVE   : C_GHOST;
         Color practiceCol = gameMode == Mode.Practice ? C_PRACTICE : C_GHOST;
@@ -252,6 +272,8 @@ public class GameStateManager : MonoBehaviour
                           : gameMode == Mode.Practice ? "Practice — all floors unlocked"
                           : "Full visibility, no fog";
     }
+
+    bool EndlessUnlocked => PracticeMode || (progression != null && progression.DungeonComplete);
 
     void ShowHowToPlay()
     {
@@ -274,7 +296,6 @@ public class GameStateManager : MonoBehaviour
         var title = BuildTMP(p, titleFont, 26, C_GOLD, new Vector2(0, 306), new Vector2(700, 50), TextAlignmentOptions.Center);
         title.text = "HOW TO PLAY";
 
-        // --- CONTROLS ---
         SectionHeader(p, "CONTROLS", 268, divW);
         BuildKeyCap(p, new Vector2(-320, 220), new Vector2(36, 36), "W");
         BuildKeyCap(p, new Vector2(-278, 220), new Vector2(36, 36), "A");
@@ -286,21 +307,18 @@ public class GameStateManager : MonoBehaviour
         var atkLbl = BuildTMP(p, bodyFont, 20, C_TEXT, new Vector2(40, 176), new Vector2(320, 30), TextAlignmentOptions.Left);
         atkLbl.text = "Attack  (costs mana)";
 
-        // --- OBJECTIVE ---
         SectionHeader(p, "OBJECTIVE", 138, divW);
         var obj = BuildTMP(p, bodyFont, 19, C_TEXT, new Vector2(0, 96), new Vector2(divW, 56), TextAlignmentOptions.TopLeft);
         obj.text =
-            "Reach the exit stairs to clear each floor.\n" +
+            "Reach the exit portal to clear each floor.\n" +
             "Less damage taken = higher medal.";
 
-        // --- MEDALS ---
         SectionHeader(p, "MEDALS", 44, divW);
         BuildMedalRow(p, 10,  1, C_BRONZE,  "BRONZE");
         BuildMedalRow(p, -20, 2, C_SILVER,  "SILVER");
         BuildMedalRow(p, -50, 3, C_GOLD,    "GOLD");
         BuildMedalRow(p, -80, 3, C_DIAMOND, "DIAMOND  —  flawless, no attacks");
 
-        // --- DIFFICULTY ---
         SectionHeader(p, "DIFFICULTY", -122, divW);
         var hardLine = BuildTMP(p, bodyFont, 19, C_ACTIVE, new Vector2(0, -162), new Vector2(divW, 26), TextAlignmentOptions.Left);
         hardLine.text = "HARD  —  fog of war limits your vision";
@@ -365,7 +383,21 @@ public class GameStateManager : MonoBehaviour
     {
         if (state != State.Playing) return;
 
+        if (endless)
+        {
+            AdvanceEndlessFloor();
+            return;
+        }
+
         if (telemetry != null) telemetry.FinalizeCurrentFloorAsCleared();
+
+        int clearedFloor = dungeon != null ? dungeon.CurrentFloor : 0;
+        bool isFinalFloor = progression != null ? progression.IsFinalFloor(clearedFloor) : clearedFloor >= 100;
+        if (isFinalFloor && !PracticeMode)
+        {
+            EnterComplete();
+            return;
+        }
 
         state = State.FloorCleared;
         Time.timeScale = 0f;
@@ -394,6 +426,13 @@ public class GameStateManager : MonoBehaviour
         OpenProgression();
     }
 
+    void AdvanceEndlessFloor()
+    {
+        if (telemetry != null) telemetry.FinalizeCurrentFloorAsCleared();
+        int next = (dungeon != null ? dungeon.CurrentFloor : 0) + 1;
+        EnterEndlessFloor(next);
+    }
+
     void StartProgressionPulse()
     {
         if (progressionPulse != null) StopCoroutine(progressionPulse);
@@ -419,8 +458,10 @@ public class GameStateManager : MonoBehaviour
                         floor == progression.HighestClearedFloor + 1;
         if (!unlocked) return;
 
+        SetEndless(false);
         progressionPanel.SetActive(false);
         if (telemetry != null) telemetry.ResetSession();
+        if (playerHealth != null) playerHealth.ResetToFull();
         state = State.Playing;
         Time.timeScale = 1f;
         ApplyMode();
@@ -429,6 +470,7 @@ public class GameStateManager : MonoBehaviour
 
     void AdvanceFromProgression()
     {
+        SetEndless(false);
         if (progression != null && progression.DungeonComplete)
         {
             EnterComplete();
@@ -436,6 +478,7 @@ public class GameStateManager : MonoBehaviour
         }
         progressionPanel.SetActive(false);
         if (telemetry != null) telemetry.ResetSession();
+        if (playerHealth != null) playerHealth.ResetToFull();
         state = State.Playing;
         Time.timeScale = 1f;
         ApplyMode();
@@ -446,18 +489,44 @@ public class GameStateManager : MonoBehaviour
     void EnterComplete()
     {
         progressionPanel.SetActive(false);
-        state = State.GameOver;
+        state = State.Complete;
         Time.timeScale = 0f;
-        int cap = progression != null ? progression.floorCap : 25;
-        goTitle.text = "DUNGEON COMPLETE!";
-        goTitle.color = C_DIAMOND;
-        goIcon.SetActive(false);
-        goFellLine.gameObject.SetActive(false);
-        goFloor.gameObject.SetActive(false);
-        goStats.text =
-            $"You cleared all {cap} floors.\n\n" +
-            $"Press T for your run log (paste into the form)";
-        gameOverPanel.SetActive(true);
+        int cap = progression != null ? progression.floorCap : 100;
+        completeStats.text = $"You cleared all {cap} floors.";
+        completePanel.SetActive(true);
+    }
+
+    void StartEndless()
+    {
+        SetEndless(true);
+        completePanel.SetActive(false);
+        if (telemetry != null) telemetry.ResetSession();
+        if (playerHealth != null) playerHealth.ResetToFull();
+        state = State.Playing;
+        Time.timeScale = 1f;
+        ApplyMode();
+        int startFloor = (progression != null ? progression.floorCap : 100) + 1;
+        EnterEndlessFloor(startFloor);
+    }
+
+    void DirectEnterEndless()
+    {
+        if (!EndlessUnlocked) return;
+        SetEndless(true);
+        progressionPanel.SetActive(false);
+        if (telemetry != null) telemetry.ResetSession();
+        if (playerHealth != null) playerHealth.ResetToFull();
+        if (playerMana != null) playerMana.ResetToFull();
+        state = State.Playing;
+        Time.timeScale = 1f;
+        ApplyMode();
+        int startFloor = (progression != null ? progression.floorCap : 100) + 1;
+        EnterEndlessFloor(startFloor);
+    }
+
+    void EnterEndlessFloor(int floor)
+    {
+        if (dungeon != null) dungeon.JumpToFloor(floor);
     }
 
     Color TierColor(LevelProgression.Tier t) =>
@@ -486,20 +555,6 @@ public class GameStateManager : MonoBehaviour
         rt.anchoredPosition = pos;
         d.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.18f);
         return d;
-    }
-
-    GameObject BuildIconBox(Transform parent, Vector2 pos, float box, string glyph, Color glyphColor)
-    {
-        GameObject g = new GameObject("IconBox", typeof(RectTransform), typeof(Image));
-        g.transform.SetParent(parent, false);
-        RectTransform rt = g.GetComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = new Vector2(box, box);
-        rt.anchoredPosition = pos;
-        g.GetComponent<Image>().color = C_GHOST;
-        var t = BuildTMP(g.transform, titleFont, box * 0.5f, glyphColor, Vector2.zero, new Vector2(box, box), TextAlignmentOptions.Center);
-        t.text = glyph;
-        return g;
     }
 
     void SetStars(LevelProgression.Tier tier)
@@ -571,6 +626,7 @@ public class GameStateManager : MonoBehaviour
 
         BuildFloorClearedScreen(canvasObj.transform);
         BuildGameOverScreen(canvasObj.transform);
+        BuildCompleteScreen(canvasObj.transform);
         BuildProgressionScreen(canvasObj.transform);
         BuildMainMenuScreen(canvasObj.transform);
         BuildPauseScreen(canvasObj.transform);
@@ -633,7 +689,6 @@ public class GameStateManager : MonoBehaviour
         startPanel.GetComponent<Image>().color = C_NAVY;
         Transform bg = startPanel.transform;
 
-        // Title + tagline sit on the navy backdrop; 56px major outer gaps to the panel.
         var titleTop = BuildTMP(bg, titleFont, 46, C_TEXT, new Vector2(0, 265), new Vector2(720, 70), TextAlignmentOptions.Center);
         titleTop.text = "DUNGEON";
         var titleBot = BuildTMP(bg, titleFont, 46, C_GOLD, new Vector2(0, 210), new Vector2(720, 70), TextAlignmentOptions.Center);
@@ -641,17 +696,14 @@ public class GameStateManager : MonoBehaviour
         startText = BuildTMP(bg, bodyFont, 26, C_TEXT2, new Vector2(0, 158), new Vector2(700, 44), TextAlignmentOptions.Center);
         startText.text = "Descend as deep as you can.";
 
-        // Narrow panel: 420 wide (~1/3 of a 1280 canvas), 32px inner padding.
         RectTransform pr = BuildBeveledPanel(startPanel.transform, new Vector2(420, 330)).rectTransform;
         pr.anchoredPosition = new Vector2(0, -34);
         Transform p = pr;
 
-        // DIFFICULTY cluster: label -> chips -> hint, tight 10px gaps.
         var diffLabel = BuildTMP(p, bodyFont, 24, C_TEXT2, new Vector2(0, 121), new Vector2(356, 34), TextAlignmentOptions.Center);
         diffLabel.text = "DIFFICULTY";
         diffLabel.characterSpacing = 8f;
 
-        // Three chips across the 356px inner width: 108 wide, 8px gaps, at x -116/0/116.
         var normalChip = BuildButton(p, "NORMAL", new Vector2(-116, 76), new Vector2(108, 46), () => SetMode(Mode.Normal), C_GHOST);
         var hardChip = BuildButton(p, "HARD", new Vector2(0, 76), new Vector2(108, 46), () => SetMode(Mode.Hard), C_GHOST);
         var practiceChip = BuildButton(p, "PRACTICE", new Vector2(116, 76), new Vector2(108, 46), () => SetMode(Mode.Practice), C_GHOST);
@@ -663,7 +715,6 @@ public class GameStateManager : MonoBehaviour
         modeHint = BuildTMP(p, bodyFont, 20, C_HINT, new Vector2(0, 33), new Vector2(356, 30), TextAlignmentOptions.Center);
         modeHint.text = "Fog of war active";
 
-        // 22px major gaps below the cluster to PLAY, then to HOW TO PLAY.
         BuildButton(p, "PLAY", new Vector2(0, -30), new Vector2(356, 62), StartRun, C_PRIMARY).fontSize = 30;
         BuildButton(p, "HOW TO PLAY", new Vector2(0, -106), new Vector2(356, 46), ShowHowToPlay, C_GHOST).fontSize = 22;
 
@@ -673,26 +724,16 @@ public class GameStateManager : MonoBehaviour
 
     void BuildProgressionScreen(Transform canvas)
     {
-        // Mockup structure: the title, the "X / Y FLOORS CLEARED" line and the
-        // DIFFICULTY chips sit directly on the plain navy backdrop with NO border
-        // (like the Main Menu title floating outside its panel). ONLY the floor-card
-        // grid gets the beveled panel. BACK / NEXT FLOOR sit below it, on the backdrop.
-        // Vertical gaps from the mockup: 8 (title->floors), 14 (->chips), 26 (->grid),
-        // 26 (grid->buttons). Centered stack spans y 491..-491 within the 1080 canvas.
         progressionPanel = BuildBackdrop(canvas);
         progressionPanel.GetComponent<Image>().color = C_NAVY;
         Transform bg = progressionPanel.transform;
 
-        // Title "PROGRESSION": Press Start 2P, 30, white (#eef1fb) — on the backdrop.
         var title = BuildTMP(bg, titleFont, 30, C_TEXT, new Vector2(0, 471), new Vector2(900, 40), TextAlignmentOptions.Center);
         title.text = "PROGRESSION";
 
-        // "X / Y FLOORS CLEARED": 8px below title, 24, #9aa3bf — on the backdrop.
         progFloorsLine = BuildTMP(bg, bodyFont, 24, C_TEXT2, new Vector2(0, 428), new Vector2(900, 30), TextAlignmentOptions.Center);
         progFloorsLine.text = "0 / 25 FLOORS CLEARED";
 
-        // Difficulty chips: 14px below the floors line — on the backdrop. Interactive
-        // (mirror Main Menu); switching mode re-populates the grid (see SetMode).
         var normalChip = BuildButton(bg, "NORMAL", new Vector2(-184, 376), new Vector2(172, 46), () => SetMode(Mode.Normal), C_GHOST);
         var hardChip = BuildButton(bg, "HARD", new Vector2(0, 376), new Vector2(172, 46), () => SetMode(Mode.Hard), C_GHOST);
         var practiceChip = BuildButton(bg, "PRACTICE", new Vector2(184, 376), new Vector2(172, 46), () => SetMode(Mode.Practice), C_GHOST);
@@ -701,17 +742,13 @@ public class GameStateManager : MonoBehaviour
         progHardChipImg = hardChip.transform.parent.GetComponent<Image>();
         progPracticeChipImg = practiceChip.transform.parent.GetComponent<Image>();
 
-        // The ONLY beveled panel: wraps the grid. Width = grid content width =
-        // 6*152 + 5*14 + 2*28 = 1038px. 26px below the chips (top edge y=327).
-        const float gridPanelW = 1038f;   // 912 cells + 70 gaps + 56 padding
+        const float gridPanelW = 1038f;
         const float gridPanelH = 720f;
-        const float gridPanelY = -33f;    // top 327, bottom -393
+        const float gridPanelY = -33f;
         RectTransform gprt = BuildBeveledPanel(bg, new Vector2(gridPanelW, gridPanelH)).rectTransform;
         gprt.anchoredPosition = new Vector2(0f, gridPanelY);
         Transform gp = gprt;
 
-        // Scroll view fills the panel; the GridLayoutGroup's 28px padding keeps cells
-        // off the bevel. 25 floors = 5 rows (~872px) exceed the 720px panel -> scrolls.
         GameObject scrollObj = new GameObject("Grid", typeof(RectTransform), typeof(ScrollRect));
         scrollObj.transform.SetParent(gp, false);
         StretchFull(scrollObj.GetComponent<RectTransform>());
@@ -724,7 +761,7 @@ public class GameStateManager : MonoBehaviour
         GameObject viewport = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
         viewport.transform.SetParent(scrollObj.transform, false);
         StretchFull(viewport.GetComponent<RectTransform>());
-        viewport.GetComponent<Image>().color = new Color(0, 0, 0, 0); // transparent raycast target so wheel/drag scroll works over empty areas
+        viewport.GetComponent<Image>().color = new Color(0, 0, 0, 0);
         sr.viewport = viewport.GetComponent<RectTransform>();
 
         GameObject content = new GameObject("Content", typeof(RectTransform), typeof(GridLayoutGroup), typeof(ContentSizeFitter));
@@ -746,7 +783,6 @@ public class GameStateManager : MonoBehaviour
         sr.content = crt;
         progressionGrid = content.transform;
 
-        // Slim vertical scrollbar inside the panel's right 28px padding gutter.
         const float sbW = 12f;
         GameObject sbObj = new GameObject("Scrollbar", typeof(RectTransform), typeof(Image), typeof(Scrollbar));
         sbObj.transform.SetParent(gp, false);
@@ -766,7 +802,6 @@ public class GameStateManager : MonoBehaviour
         sr.verticalScrollbar = sb;
         sr.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
 
-        // Bottom row (on the backdrop, below the grid panel): BACK + NEXT FLOOR, 18px gap.
         BuildButton(bg, "BACK", new Vector2(-149, -455), new Vector2(200, 72), GoToMainMenu, C_GHOST);
         BuildButton(bg, "NEXT FLOOR >", new Vector2(109, -455), new Vector2(280, 72), AdvanceFromProgression, C_PRIMARY);
 
@@ -779,7 +814,7 @@ public class GameStateManager : MonoBehaviour
             Destroy(progressionGrid.GetChild(i).gameObject);
 
         newestCard = null;
-        int cap = progression != null ? progression.floorCap : 25;
+        int cap = progression != null ? progression.floorCap : 100;
         int clearedCount = progression != null ? progression.HighestClearedFloor : 0;
         if (progFloorsLine != null)
             progFloorsLine.text = PracticeMode
@@ -787,6 +822,50 @@ public class GameStateManager : MonoBehaviour
                 : $"{clearedCount} / {cap} FLOORS CLEARED";
         for (int floor = 1; floor <= cap; floor++)
             BuildFloorCard(progressionGrid, floor);
+
+        BuildEndlessCard(progressionGrid);
+    }
+
+    void BuildEndlessCard(Transform grid)
+    {
+        bool unlocked = EndlessUnlocked;
+
+        GameObject card = new GameObject("EndlessCard", typeof(RectTransform), typeof(Image), typeof(Button));
+        card.transform.SetParent(grid, false);
+        Image cimg = card.GetComponent<Image>();
+        cimg.sprite = panelSprite;
+        cimg.type = Image.Type.Sliced;
+        card.GetComponent<Button>().onClick.AddListener(() => { if (EndlessUnlocked) DirectEnterEndless(); });
+
+        if (panelSprite != null)
+            cimg.color = unlocked ? new Color(0.55f, 0.72f, 0.78f) : new Color(0.5f, 0.53f, 0.62f);
+        else
+            cimg.color = unlocked ? C_DIAMOND : C_DIM;
+
+        var label = BuildTMP(card.transform, bodyFont, 15, unlocked ? C_TEXT : C_DIM,
+                             new Vector2(0, 22), new Vector2(140, 40), TextAlignmentOptions.Center);
+        label.text = "ENDLESS";
+
+        if (unlocked)
+        {
+            int best = progression != null ? progression.EndlessBest : 0;
+            var sub = BuildTMP(card.transform, bodyFont, best > 0 ? 14 : 18, C_DIAMOND,
+                               new Vector2(0, -20), new Vector2(140, 40), TextAlignmentOptions.Center);
+            sub.text = best > 0 ? $"BEST\nFLR {best}" : "ENTER";
+        }
+        else
+        {
+            GameObject lk = new GameObject("Lock", typeof(RectTransform), typeof(Image));
+            lk.transform.SetParent(card.transform, false);
+            RectTransform lrt = lk.GetComponent<RectTransform>();
+            lrt.anchorMin = lrt.anchorMax = new Vector2(0.5f, 0.5f);
+            lrt.sizeDelta = new Vector2(28, 28);
+            lrt.anchoredPosition = new Vector2(0, -20);
+            Image limg = lk.GetComponent<Image>();
+            limg.sprite = GetLockSprite();
+            limg.color = C_DIM;
+            limg.preserveAspect = true;
+        }
     }
 
     void BuildFloorCard(Transform grid, int floor)
@@ -799,7 +878,6 @@ public class GameStateManager : MonoBehaviour
         cimg.sprite = panelSprite;
         cimg.type = Image.Type.Sliced;
 
-        // Practice: every floor is a plain unlocked card (no stars/NEXT/lock, all clickable).
         bool cleared = !PracticeMode && progression != null && progression.HasCleared(floor);
         bool isNext = !PracticeMode && progression != null && floor == progression.HighestClearedFloor + 1;
         bool locked = !PracticeMode && !cleared && !isNext;
@@ -917,22 +995,39 @@ public class GameStateManager : MonoBehaviour
     void BuildGameOverScreen(Transform canvas)
     {
         gameOverPanel = BuildBackdrop(canvas);
-        Transform p = BuildBeveledPanel(gameOverPanel.transform, new Vector2(780, 560)).transform;
+        Transform p = BuildBeveledPanel(gameOverPanel.transform, new Vector2(780, 410)).transform;
 
-        goTitle = BuildTMP(p, titleFont, 46, C_ACTIVE, new Vector2(0, 210), new Vector2(700, 90), TextAlignmentOptions.Center);
+        goTitle = BuildTMP(p, titleFont, 46, C_ACTIVE, new Vector2(0, 130), new Vector2(700, 90), TextAlignmentOptions.Center);
         goTitle.text = "YOU DIED";
         AddDropShadow(goTitle);
 
-        goIcon = BuildIconBox(p, new Vector2(0, 118), 64f, "X", C_ACTIVE);
-        goFellLine = BuildTMP(p, bodyFont, 24, C_TEXT2, new Vector2(0, 58), new Vector2(700, 40), TextAlignmentOptions.Center);
+        goFellLine = BuildTMP(p, bodyFont, 24, C_TEXT2, new Vector2(0, 40), new Vector2(700, 40), TextAlignmentOptions.Center);
         goFellLine.text = "You fell on";
-        goFloor = BuildTMP(p, titleFont, 30, C_TEXT, new Vector2(0, 12), new Vector2(700, 56), TextAlignmentOptions.Center);
-        goStats = BuildTMP(p, bodyFont, 24, C_TEXT2, new Vector2(0, -56), new Vector2(700, 90), TextAlignmentOptions.Center);
+        goFloor = BuildTMP(p, titleFont, 30, C_TEXT, new Vector2(0, -4), new Vector2(700, 56), TextAlignmentOptions.Center);
+        goStats = BuildTMP(p, bodyFont, 24, C_TEXT2, new Vector2(0, 16), new Vector2(700, 90), TextAlignmentOptions.Center);
 
-        BuildButton(p, "MAIN MENU", new Vector2(-175, -200), new Vector2(300, 92), GoToMainMenu, C_GHOST);
-        BuildButton(p, "RETRY", new Vector2(175, -200), new Vector2(300, 92), RetryCurrentFloor, C_DANGER);
+        BuildButton(p, "MAIN MENU", new Vector2(-175, -125), new Vector2(300, 92), GoToMainMenu, C_GHOST);
+        BuildButton(p, "RETRY", new Vector2(175, -125), new Vector2(300, 92), RetryCurrentFloor, C_DANGER);
 
         gameOverPanel.SetActive(false);
+    }
+
+    void BuildCompleteScreen(Transform canvas)
+    {
+        completePanel = BuildBackdrop(canvas);
+        Transform p = BuildBeveledPanel(completePanel.transform, new Vector2(780, 410)).transform;
+
+        var title = BuildTMP(p, titleFont, 40, C_DIAMOND, new Vector2(0, 130), new Vector2(700, 80), TextAlignmentOptions.Center);
+        title.text = "DUNGEON COMPLETE!";
+        AddDropShadow(title);
+
+        completeStats = BuildTMP(p, bodyFont, 24, C_TEXT2, new Vector2(0, 16), new Vector2(700, 90), TextAlignmentOptions.Center);
+
+        BuildButton(p, "PROGRESSION", new Vector2(-175, -125), new Vector2(300, 92),
+            () => { completePanel.SetActive(false); OpenProgression(); }, C_GHOST).fontSize = 24;
+        BuildButton(p, "START ENDLESS", new Vector2(175, -125), new Vector2(300, 92), StartEndless, C_PRIMARY).fontSize = 24;
+
+        completePanel.SetActive(false);
     }
 
     GameObject BuildBackdrop(Transform parent)

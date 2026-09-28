@@ -1,9 +1,5 @@
 using UnityEngine;
 
-// Tracks how far the player has gotten and how well. When a floor is finalized as
-// cleared, it works out a medal tier (Bronze->Diamond) from how much HP was lost,
-// and saves the best tier per floor + the highest floor cleared to PlayerPrefs.
-// Saves are namespaced per mode (Hard/Normal); Practice mode is never saved.
 public class LevelProgression : MonoBehaviour
 {
     public enum Tier { Bronze, Silver, Gold, Diamond }
@@ -24,12 +20,26 @@ public class LevelProgression : MonoBehaviour
     public float LastLossPct { get; private set; }
 
     [Header("Level cap")]
-    [Tooltip("Final level. Grounded in the difficulty curve: 1v1 combat becomes mathematically unwinnable past ~floor 25 (Evaluation ch.), so 25 is the last beatable level. Clearing it is a victory; floors beyond it do not exist.")]
-    public int floorCap = 25;
+    [Tooltip("How many floors are exposed as selectable levels in Progression, and the floor whose clear triggers the victory screen. NOTE: this is a reach/testing cap, not a balance claim — per the evaluation, 1v1 combat becomes effectively unwinnable past ~floor 25, so deaths on deep floors are expected. The generator can produce all these floors; this only controls how many are surfaced.")]
+    public int floorCap = 100;
 
     public string CurrentModeKey = "Hard";
+
+    public bool SuppressSave = false;
+
     string TierKey(int floor) => $"floortier_{CurrentModeKey}_{floor}";
     string MaxKey() => $"maxClearedFloor_{CurrentModeKey}";
+
+    string EndlessBestKey() => $"endlessBest_{CurrentModeKey}";
+    public int EndlessBest => PlayerPrefs.GetInt(EndlessBestKey(), 0);
+    public void RecordEndlessFloor(int floor)
+    {
+        if (floor > PlayerPrefs.GetInt(EndlessBestKey(), 0))
+        {
+            PlayerPrefs.SetInt(EndlessBestKey(), floor);
+            PlayerPrefs.Save();
+        }
+    }
 
     public bool IsFinalFloor(int floor) => floor >= floorCap;
     public bool DungeonComplete => HighestClearedFloor >= floorCap;
@@ -70,12 +80,14 @@ public class LevelProgression : MonoBehaviour
         LastFloor = floor;
         LastLossPct = lossPct;
 
-        // Practice is a scratch sandbox: compute the tier for the Floor Cleared screen
-        // (LastTier above) but never persist it, so it can't pollute real Hard/Normal data.
         bool practice = CurrentModeKey == "Practice";
-        if (!practice) SaveBest(floor, tier);
+        bool skipSave = practice || SuppressSave;
+        if (!skipSave) SaveBest(floor, tier);
 
-        Debug.Log($"[LevelProgression] Floor {floor} cleared — this run: {tier} ({lossPct * 100f:F0}% HP lost, attacked={attempted}){(practice ? " | PRACTICE (not saved)" : $" | stored best: {GetBestTier(floor)} | highest cleared: {HighestClearedFloor}")}");
+        string saveNote = skipSave
+            ? (practice ? " | PRACTICE (not saved)" : " | ENDLESS (not saved)")
+            : $" | stored best: {GetBestTier(floor)} | highest cleared: {HighestClearedFloor}";
+        Debug.Log($"[LevelProgression] Floor {floor} cleared — this run: {tier} ({lossPct * 100f:F0}% HP lost, attacked={attempted}){saveNote}");
 
         if (player != null) player.ResetAttackAttempt();
     }
