@@ -6,8 +6,7 @@ generation), so each floor is different. This is my final project about
 
 - **Engine:** Unity 6000.5.0f1 (2D, URP)
 - **Language:** C#
-- **Play in browser (WebGL):** [add your itch.io link here]
-- **Video demo:** [add your video link here]
+- **Play in browser (WebGL):** https://angellineputri.itch.io/dungeon-generator
 
 ---
 
